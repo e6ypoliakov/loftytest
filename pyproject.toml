@@ -1,14 +1,15 @@
 [project]
-name = "repl-nix-workspace"
-version = "0.1.0"
-description = "Add your description here"
+name = "acestep-music-api"
+version = "1.0.0"
+description = "REST API service for music generation using ACE-Step 1.5 model"
 requires-python = ">=3.11"
 dependencies = [
-    "celery[redis]>=5.6.2",
-    "fastapi>=0.129.0",
-    "pydantic>=2.12.5",
-    "pydantic-settings>=2.13.1",
-    "python-multipart>=0.0.22",
-    "redis>=6.4.0",
-    "uvicorn[standard]>=0.41.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "celery[redis]>=5.6.0",
+    "redis>=6.2.0",
+    "pydantic>=2.11.0",
+    "pydantic-settings>=2.9.0",
+    "python-multipart>=0.0.20",
+    "ace-step @ git+https://github.com/ace-step/ACE-Step-1.5.git",
 ]

@@ -27,11 +27,38 @@ venv/
 ENV/
 .env
 *.log
+.pythonlibs/
+.uv/
+
+# Model weights and checkpoints (downloaded automatically on setup)
+checkpoints/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.onnx
+
+# HuggingFace cache
+.cache/huggingface/
+
+# Generated output
 generated_audio/
 lora_models/
 *.wav
 *.mp3
 *.flac
 *.ogg
-.pythonlibs/
-.uv/
+*.opus
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

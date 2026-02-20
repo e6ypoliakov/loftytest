@@ -187,17 +187,22 @@ async def train_lora(
 
         os.remove(zip_path)
 
-        audio_extensions = {".mp3", ".wav", ".flac", ".ogg", ".m4a"}
+        audio_extensions = {".mp3", ".wav", ".flac", ".ogg", ".opus"}
         audio_files = []
         for root_dir, dirs, files in os.walk(tmp_dir):
             for file in files:
                 if os.path.splitext(file)[1].lower() in audio_extensions:
                     audio_files.append(os.path.join(root_dir, file))
 
-        if len(audio_files) < 1:
+        if len(audio_files) < 5:
             raise HTTPException(
                 status_code=400,
-                detail="No audio files found in the archive",
+                detail=f"Need at least 5 audio files for LoRA training, got {len(audio_files)}",
+            )
+        if len(audio_files) > 10:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Maximum 10 audio files for LoRA training, got {len(audio_files)}",
             )
 
         task_id = str(uuid.uuid4())

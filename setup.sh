@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
 
-echo "=== ACE-Step Music Generation API Setup ==="
+echo "=== ACE-Step Music Generation API — Setup ==="
+echo ""
 
 if ! command -v uv &> /dev/null; then
     echo "Installing uv..."
@@ -9,20 +10,47 @@ if ! command -v uv &> /dev/null; then
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
-echo "Installing dependencies..."
-uv pip install -e . 2>/dev/null || uv pip install \
-    fastapi "uvicorn[standard]" "celery[redis]" redis pydantic pydantic-settings python-multipart
+echo "Creating virtual environment..."
+uv venv .venv 2>/dev/null || true
+source .venv/bin/activate
 
-echo "Installing ACE-Step from GitHub..."
-uv pip install "ace-step @ git+https://github.com/ace-step/ACE-Step-1.5.git" || \
-    echo "WARNING: ACE-Step installation failed. The API will run in mock mode."
+echo "Installing PyTorch with CUDA 12.1..."
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+echo "Installing project dependencies..."
+uv pip install -e .
+
+echo "Installing ACE-Step 1.5 from GitHub..."
+uv pip install "ace-step @ git+https://github.com/ace-step/ACE-Step-1.5.git"
 
 mkdir -p generated_audio lora_models
 
 echo ""
+echo "Downloading ACE-Step models from HuggingFace..."
+python -c "
+from acestep.model_downloader import download_all_models
+from pathlib import Path
+import os
+
+checkpoints_dir = Path(os.getcwd()) / 'checkpoints'
+checkpoints_dir.mkdir(exist_ok=True)
+
+hf_token = os.environ.get('HF_TOKEN')
+success, messages = download_all_models(checkpoints_dir, token=hf_token)
+for msg in messages:
+    print(msg)
+if success:
+    print('All models downloaded successfully.')
+else:
+    print('WARNING: Some models failed to download. They will be retried on first run.')
+"
+
+echo ""
 echo "=== Setup Complete ==="
+echo ""
 echo "To start the service:"
-echo "  1. Start Redis:         redis-server --daemonize yes"
-echo "  2. Start Celery worker: celery -A core.celery_app worker --loglevel=info"
-echo "  3. Start API server:    uvicorn api.main:app --host 0.0.0.0 --port 5000"
-echo "  4. Open Swagger UI:     http://localhost:5000/docs"
+echo "  source .venv/bin/activate"
+echo "  ./start.sh"
+echo ""
+echo "Or with Docker:"
+echo "  ./start_docker.sh"

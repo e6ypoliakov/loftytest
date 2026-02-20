@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     curl \
     git \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
@@ -20,10 +21,13 @@ ENV PATH="/root/.local/bin:$PATH"
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock* ./
+COPY requirements.txt .
 
-RUN uv pip install --system -e . || uv pip install --system \
-    fastapi uvicorn[standard] celery[redis] redis pydantic pydantic-settings python-multipart
+RUN uv pip install --system -r requirements.txt
+
+RUN uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+RUN uv pip install --system git+https://github.com/ace-step/ACE-Step-1.5.git
 
 COPY . .
 
@@ -33,5 +37,8 @@ ENV REDIS_URL=redis://redis:6379/0
 ENV MODEL_PATH=acestep-v15-turbo
 ENV OUTPUT_DIR=generated_audio
 ENV LORA_DIR=lora_models
+ENV TOKENIZERS_PARALLELISM=false
 
-CMD ["celery", "-A", "core.celery_app", "worker", "--loglevel=info", "--concurrency=1"]
+EXPOSE 5000
+
+CMD ["celery", "-A", "core.celery_app", "worker", "--loglevel=info", "--pool=solo", "--concurrency=1"]

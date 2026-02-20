@@ -1,6 +1,7 @@
 import os
 import logging
 import shutil
+import tempfile
 from typing import Dict, Any, List
 
 from core.celery_app import celery_app
@@ -48,37 +49,116 @@ def generate_track(self, task_id: str, generation_params: Dict[str, Any]):
 
 @celery_app.task(bind=True, name="tasks.train_lora")
 def train_lora_task(self, style_name: str, audio_files_paths: List[str]):
+    scan_dir = None
+    tensor_dir = None
     try:
-        self.update_state(state="PROGRESS", meta={"status": "preparing_training"})
+        self.update_state(state="PROGRESS", meta={"status": "loading_model"})
+
+        from core.models import load_models
+        from acestep.training.dataset_builder import DatasetBuilder
+        from acestep.training.trainer import LoRATrainer
+        from acestep.training.configs import LoRAConfig, TrainingConfig
+
+        dit_handler, _ = load_models()
 
         lora_output_dir = os.path.join(settings.LORA_DIR, style_name)
         os.makedirs(lora_output_dir, exist_ok=True)
 
+        self.update_state(state="PROGRESS", meta={"status": "preprocessing_audio"})
+
+        scan_dir = tempfile.mkdtemp(prefix="lora_scan_")
+        for audio_path in audio_files_paths:
+            if os.path.exists(audio_path):
+                dest = os.path.join(scan_dir, os.path.basename(audio_path))
+                shutil.copy2(audio_path, dest)
+
+                caption_file = dest.rsplit(".", 1)[0] + ".caption.txt"
+                with open(caption_file, "w") as f:
+                    f.write(style_name)
+
+        builder = DatasetBuilder()
+        builder.metadata.custom_tag = style_name
+        samples, scan_status = builder.scan_directory(scan_dir)
+        logger.info(f"Scan result: {scan_status}")
+
+        if not samples:
+            return {
+                "status": "failed",
+                "error": "No valid audio files found after scanning",
+            }
+
+        for sample in builder.samples:
+            if not sample.labeled:
+                sample.caption = style_name
+                sample.labeled = True
+
+        labeled_count = sum(1 for s in builder.samples if s.labeled)
+        logger.info(f"Preprocessing {labeled_count} labeled audio files for LoRA training")
+
+        tensor_dir = tempfile.mkdtemp(prefix="lora_tensors_")
+
+        output_paths, preprocess_status = builder.preprocess_to_tensors(
+            dit_handler=dit_handler,
+            output_dir=tensor_dir,
+        )
+        logger.info(f"Preprocess result: {preprocess_status}")
+
+        if not output_paths:
+            return {
+                "status": "failed",
+                "error": f"Preprocessing failed: {preprocess_status}",
+            }
+
         self.update_state(state="PROGRESS", meta={"status": "training"})
 
-        try:
-            from acestep.train import train_lora
+        lora_config = LoRAConfig(
+            r=8,
+            alpha=16,
+            dropout=0.1,
+        )
 
-            train_lora(
-                audio_files=audio_files_paths,
-                output_dir=lora_output_dir,
-                style_name=style_name,
-            )
-        except ImportError:
-            logger.warning("ACE-Step training module not available. Creating placeholder.")
-            placeholder_path = os.path.join(lora_output_dir, "adapter_config.json")
-            import json
-            with open(placeholder_path, "w") as f:
-                json.dump({
-                    "style_name": style_name,
-                    "status": "placeholder",
-                    "audio_files": audio_files_paths,
-                }, f)
+        training_config = TrainingConfig(
+            learning_rate=1e-4,
+            batch_size=1,
+            max_epochs=100,
+            save_every_n_epochs=25,
+            output_dir=lora_output_dir,
+        )
+
+        trainer = LoRATrainer(
+            dit_handler=dit_handler,
+            lora_config=lora_config,
+            training_config=training_config,
+        )
+
+        last_step = 0
+        last_loss = 0.0
+        for step, loss, status_msg in trainer.train_from_preprocessed(tensor_dir):
+            last_step = step
+            last_loss = loss
+            if step % 50 == 0:
+                logger.info(f"LoRA training step {step}: loss={loss:.4f} - {status_msg}")
+                self.update_state(state="PROGRESS", meta={
+                    "status": "training",
+                    "step": step,
+                    "loss": loss,
+                })
+
+        logger.info(f"LoRA training complete: {last_step} steps, final loss={last_loss:.4f}")
 
         return {
             "status": "success",
             "lora_id": style_name,
             "lora_path": lora_output_dir,
+            "steps": last_step,
+            "final_loss": last_loss,
+        }
+
+    except ImportError as e:
+        logger.error(f"ACE-Step training modules not available: {e}")
+        return {
+            "status": "failed",
+            "error": f"Training modules not available: {e}",
         }
     except Exception as e:
         logger.error(f"LoRA training failed for style {style_name}: {e}")
@@ -87,6 +167,10 @@ def train_lora_task(self, style_name: str, audio_files_paths: List[str]):
             "error": str(e),
         }
     finally:
+        if tensor_dir and os.path.isdir(tensor_dir):
+            shutil.rmtree(tensor_dir, ignore_errors=True)
+        if scan_dir and os.path.isdir(scan_dir):
+            shutil.rmtree(scan_dir, ignore_errors=True)
         for path in audio_files_paths:
             try:
                 tmp_dir = path
