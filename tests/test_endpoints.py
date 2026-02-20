@@ -15,7 +15,7 @@ class TestRootEndpoint:
         assert data["service"] == "ACE-Step Music Generation API"
         assert data["version"] == "1.0.0"
         assert "endpoints" in data
-        assert data["endpoints"]["generate"] == "POST /generate"
+        assert "POST /generate" in data["endpoints"]["generate"]
 
     def test_root_cors_headers(self):
         resp = client.get("/", headers={"Origin": "http://example.com"})
