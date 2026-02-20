@@ -15,7 +15,6 @@ REST API сервис для генерации музыки через моде
 - **ACE-Step 1.5** generates audio on NVIDIA GPU
 - **Docker Compose** — 3 configs: CPU, GPU, Farm
 - **Flower** — Celery monitoring dashboard (Farm mode only)
-- **start.sh** for local run without Docker
 
 ## Docker Deploy Modes
 - `deploy.sh cpu` — Dockerfile.cpu + docker-compose.cpu.yml (no CUDA)
@@ -52,8 +51,6 @@ Dockerfile               - GPU worker image (CUDA 12.1)
 Dockerfile.cpu           - CPU-only image (no CUDA)
 .dockerignore            - Excludes checkpoints, cache from builds
 pyproject.toml           - Single source of dependencies
-setup.sh                 - Full setup + model download
-start.sh                 - Local startup script
 README.md                - Documentation (Russian)
 ```
 

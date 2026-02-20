@@ -6,8 +6,6 @@ REST API сервис для генерации музыки с помощью �
 
 - **Docker** + Docker Compose
 - **GPU (опционально)**: NVIDIA с VRAM >= 6 GB + [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
-- **Python 3.11** (только для запуска без Docker)
-- **Redis 7+** (только для запуска без Docker)
 
 ## Быстрый старт (Docker)
 
@@ -73,30 +71,6 @@ docker compose -f docker-compose.farm.yml up --build -d --scale worker=4
 | `API_MEMORY` | 2G | Лимит RAM для API |
 | `HF_TOKEN` | — | Токен HuggingFace |
 
-## Запуск без Docker
-
-```bash
-# 1. Установите Redis
-sudo apt install redis-server   # Ubuntu/Debian
-# или
-brew install redis               # macOS
-
-# 2. Полная автоматическая установка
-chmod +x setup.sh
-./setup.sh
-
-# 3. Запуск
-chmod +x start.sh
-./start.sh
-```
-
-Или вручную:
-```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-pip install -e .
-./start.sh
-```
-
 ## Структура проекта
 
 ```
@@ -117,8 +91,6 @@ pip install -e .
 ├── Dockerfile                 # Образ с CUDA 12.1
 ├── Dockerfile.cpu             # Образ без CUDA
 ├── pyproject.toml             # Зависимости Python
-├── setup.sh                   # Установка без Docker
-├── start.sh                   # Локальный запуск
 └── README.md
 ```
 
