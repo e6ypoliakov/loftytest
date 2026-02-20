@@ -1,8 +1,12 @@
-from pydantic_settings import BaseSettings
+import os
 from typing import Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="allow")
+
     REDIS_URL: str = "redis://localhost:6379/0"
     MODEL_PATH: str = "acestep-v15-turbo"
     OUTPUT_DIR: str = "generated_audio"
@@ -10,13 +14,8 @@ class Settings(BaseSettings):
     LORA_DIR: str = "lora_models"
     ACESTEP_INIT_LLM: bool = False
 
-    class Config:
-        env_file = ".env"
-        extra = "allow"
-
 
 settings = Settings()
 
-import os
 os.makedirs(settings.OUTPUT_DIR, exist_ok=True)
 os.makedirs(settings.LORA_DIR, exist_ok=True)

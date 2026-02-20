@@ -2,7 +2,7 @@ import os
 import logging
 import shutil
 import tempfile
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from core.celery_app import celery_app
 from core.config import settings
@@ -47,7 +47,7 @@ def generate_track(self, task_id: str, generation_params: Dict[str, Any]):
         }
 
 
-def _find_lora_train_tmp_dir(audio_paths: List[str]) -> str | None:
+def _find_lora_train_tmp_dir(audio_paths: List[str]) -> Optional[str]:
     for path in audio_paths:
         parent = os.path.dirname(path)
         if parent.startswith("/tmp") and os.path.basename(parent).startswith("lora_train_"):

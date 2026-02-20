@@ -6,8 +6,10 @@ import tempfile
 import logging
 from typing import List, Optional
 
+import mimetypes
 import redis as redis_lib
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -27,6 +29,14 @@ app = FastAPI(
     title="ACE-Step Music Generation API",
     description="REST API for music generation using ACE-Step 1.5 model",
     version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -182,9 +192,13 @@ async def get_file(filename: str):
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="File not found")
 
+    content_type, _ = mimetypes.guess_type(safe_filename)
+    if not content_type:
+        content_type = "audio/wav"
+
     return FileResponse(
         path=file_path,
-        media_type="audio/wav",
+        media_type=content_type,
         filename=safe_filename,
         headers={"Cache-Control": "no-cache"},
     )
@@ -195,7 +209,8 @@ async def train_lora(
     style_name: str = Form(..., description="Name for the style/LoRA adapter"),
     audio_archive: UploadFile = File(..., description="ZIP archive with 5-10 audio files"),
 ):
-    if not audio_archive.filename.endswith(".zip"):
+    filename = audio_archive.filename or ""
+    if not filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Please upload a ZIP archive")
 
     tmp_dir = tempfile.mkdtemp(prefix="lora_train_")
