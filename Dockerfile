@@ -21,15 +21,11 @@ ENV PATH="/root/.local/bin:$PATH"
 
 WORKDIR /app
 
-COPY requirements.txt .
-
-RUN uv pip install --system -r requirements.txt
-
 RUN uv pip install --system torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-RUN uv pip install --system git+https://github.com/ace-step/ACE-Step-1.5.git
-
 COPY . .
+
+RUN uv pip install --system .
 
 RUN mkdir -p generated_audio lora_models
 

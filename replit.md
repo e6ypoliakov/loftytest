@@ -4,9 +4,9 @@
 REST API сервис для генерации музыки через модель ACE-Step 1.5. Проект предназначен для локального запуска на компьютере с NVIDIA GPU. FastAPI + Celery + Redis.
 
 ## Recent Changes
-- 2026-02-20: Полный аудит и исправление критических багов: GenerationResult.audios вместо audio_files, DatasetBuilder.scan_directory вместо несуществующего add_sample, AudioSample без несуществующего поля tags, pydantic-settings defaults fix, audio formats alignment (.opus вместо .m4a).
-- 2026-02-20: Переделан проект для локального запуска с GPU. Docker Compose для полного стека. README на русском.
-- 2026-02-20: Initial project setup with full API, Celery workers, and Redis integration.
+- 2026-02-20: Рефакторинг: удалены main.py и requirements.txt (дубликат pyproject.toml), core/models.py разбит на функции, ZIP-обработка вынесена из эндпоинта, Redis connection pool, упрощена очистка tmp-директорий, Dockerfile переведён на pyproject.toml.
+- 2026-02-20: Полный аудит: GenerationResult.audios, DatasetBuilder.scan_directory, AudioSample без tags, pydantic-settings defaults, .opus вместо .m4a.
+- 2026-02-20: Проект переделан для локального запуска с GPU. Docker Compose для полного стека.
 
 ## Architecture
 - **FastAPI** serves REST endpoints on port 5000
@@ -34,11 +34,13 @@ core/config.py           - Pydantic settings (env vars)
 core/models.py           - ACE-Step model loading & generation (CUDA)
 core/celery_app.py       - Celery configuration
 tasks/generation_tasks.py - Celery tasks (generate, train LoRA)
-generated_audio/         - Output audio files
-lora_models/             - LoRA adapter storage
+generated_audio/         - Output audio files (gitignored)
+lora_models/             - LoRA adapter storage (gitignored)
+checkpoints/             - Model weights (gitignored, auto-downloaded)
 docker-compose.yml       - Full stack: Redis + API + GPU Worker
 Dockerfile               - GPU worker image (CUDA 12.1)
-requirements.txt         - Python dependencies
+pyproject.toml           - Single source of dependencies
+setup.sh                 - Full setup + model download
 start.sh                 - Local startup script
 start_docker.sh          - Docker startup helper
 README.md                - Documentation (Russian)

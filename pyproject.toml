@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "acestep-music-api"
 version = "1.0.0"
@@ -11,5 +15,9 @@ dependencies = [
     "pydantic>=2.11.0",
     "pydantic-settings>=2.9.0",
     "python-multipart>=0.0.20",
+    "soundfile>=0.13.1",
     "ace-step @ git+https://github.com/ace-step/ACE-Step-1.5.git",
 ]
+
+[tool.setuptools]
+py-modules = []

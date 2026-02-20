@@ -1,8 +1,11 @@
 import os
 import logging
+import shutil
 import threading
+from typing import Any, Dict, Optional, Tuple
+
+import soundfile as sf
 import torch
-from typing import Dict, Any, Optional
 
 from core.config import settings
 
@@ -47,7 +50,6 @@ def load_models():
             _dit_handler = AceStepHandler()
 
             project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
             os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
             logger.info(f"Loading model: {config_path} (this may download models on first run)")
@@ -88,14 +90,11 @@ def load_models():
             raise
 
 
-def generate_music(params: Dict[str, Any], task_id: str, lora_path: Optional[str] = None) -> str:
-    from acestep.inference import GenerationParams, GenerationConfig, generate_music as ace_generate
-
-    dit_handler, llm_handler = load_models()
+def _build_generation_params(params: Dict[str, Any]) -> Tuple:
+    from acestep.inference import GenerationParams, GenerationConfig
 
     caption = params.get("prompt", params.get("caption", ""))
     lyrics = params.get("lyrics", "")
-    duration = params.get("duration", 120)
     style = params.get("style", "")
 
     if style and caption:
@@ -104,40 +103,78 @@ def generate_music(params: Dict[str, Any], task_id: str, lora_path: Optional[str
         caption = style
 
     seed = params.get("seed", -1)
-    num_steps = params.get("num_steps", 8)
-    cfg_scale = params.get("cfg_scale", 3.5)
-    batch_size = params.get("batch_size", 1)
 
     gen_params = GenerationParams(
         caption=caption,
         lyrics=lyrics if lyrics else "[Instrumental]",
-        duration=float(duration),
-        inference_steps=num_steps,
-        guidance_scale=cfg_scale,
+        duration=float(params.get("duration", 120)),
+        inference_steps=params.get("num_steps", 8),
+        guidance_scale=params.get("cfg_scale", 3.5),
         seed=seed if seed and seed != -1 else -1,
         thinking=False,
     )
 
     gen_config = GenerationConfig(
-        batch_size=batch_size,
+        batch_size=params.get("batch_size", 1),
         use_random_seed=(seed == -1 or seed is None),
         audio_format="wav",
     )
 
+    return gen_params, gen_config, caption
+
+
+def _apply_lora(dit_handler, lora_path: str) -> None:
+    try:
+        logger.info(f"Loading LoRA adapter from: {lora_path}")
+        lora_msg = dit_handler.load_lora(lora_path)
+        if lora_msg.startswith("\u274c"):
+            logger.warning(f"LoRA loading issue: {lora_msg}")
+        else:
+            logger.info(f"LoRA loaded: {lora_msg}")
+    except Exception as e:
+        logger.warning(f"Failed to load LoRA adapter: {e}")
+
+
+def _save_result_audio(result, task_id: str, save_dir: str) -> str:
+    output_filename = f"{task_id}.wav"
+    output_path = os.path.join(save_dir, output_filename)
+
+    if not result.audios:
+        raise RuntimeError("No audio was generated")
+
+    first_audio = result.audios[0]
+    first_path = first_audio.get("path", "")
+
+    if first_path and os.path.exists(first_path):
+        if os.path.abspath(first_path) != os.path.abspath(output_path):
+            shutil.move(first_path, output_path)
+    else:
+        tensor = first_audio.get("tensor")
+        if tensor is None:
+            raise RuntimeError("No audio data in generation result")
+        sample_rate = first_audio.get("sample_rate", 48000)
+        audio_np = tensor.cpu().numpy()
+        if audio_np.ndim == 2:
+            audio_np = audio_np.T
+        sf.write(output_path, audio_np, sample_rate)
+
+    return output_filename
+
+
+def generate_music(params: Dict[str, Any], task_id: str, lora_path: Optional[str] = None) -> str:
+    from acestep.inference import generate_music as ace_generate
+
+    dit_handler, llm_handler = load_models()
+
+    gen_params, gen_config, caption = _build_generation_params(params)
+
     if lora_path and os.path.exists(lora_path):
-        try:
-            logger.info(f"Loading LoRA adapter from: {lora_path}")
-            lora_msg = dit_handler.load_lora(lora_path)
-            if lora_msg.startswith("❌"):
-                logger.warning(f"LoRA loading issue: {lora_msg}")
-            else:
-                logger.info(f"LoRA loaded: {lora_msg}")
-        except Exception as e:
-            logger.warning(f"Failed to load LoRA adapter: {e}")
+        _apply_lora(dit_handler, lora_path)
 
     save_dir = os.path.abspath(settings.OUTPUT_DIR)
     os.makedirs(save_dir, exist_ok=True)
 
+    duration = params.get("duration", 120)
     logger.info(f"Starting generation for task {task_id}: caption='{caption[:80]}...', duration={duration}s")
 
     result = ace_generate(
@@ -151,31 +188,6 @@ def generate_music(params: Dict[str, Any], task_id: str, lora_path: Optional[str
     if not result.success:
         raise RuntimeError(f"Generation failed: {result.error or result.status_message}")
 
-    output_filename = f"{task_id}.wav"
-    output_path = os.path.join(save_dir, output_filename)
-
-    if result.audios and len(result.audios) > 0:
-        import shutil
-        first_audio = result.audios[0]
-        first_path = first_audio.get("path", "")
-        if first_path and os.path.exists(first_path) and os.path.abspath(first_path) != os.path.abspath(output_path):
-            shutil.move(first_path, output_path)
-        elif first_path and os.path.exists(first_path):
-            pass
-        else:
-            tensor = first_audio.get("tensor")
-            if tensor is not None:
-                import soundfile as sf
-                sample_rate = first_audio.get("sample_rate", 48000)
-                audio_np = tensor.cpu().numpy()
-                if audio_np.ndim == 2:
-                    audio_np = audio_np.T
-                sf.write(output_path, audio_np, sample_rate)
-            else:
-                raise RuntimeError("No audio data in generation result")
-        logger.info(f"Generation complete: {output_filename}")
-    else:
-        logger.error(f"No audio generated for task {task_id}")
-        raise RuntimeError("No audio was generated")
-
+    output_filename = _save_result_audio(result, task_id, save_dir)
+    logger.info(f"Generation complete: {output_filename}")
     return output_filename

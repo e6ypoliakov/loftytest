@@ -1,13 +1,14 @@
 import os
 import uuid
 import zipfile
+import shutil
 import tempfile
 import logging
-from typing import Optional
+from typing import List, Optional
 
+import redis as redis_lib
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from core.config import settings
@@ -15,6 +16,12 @@ from core.celery_app import celery_app
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".flac", ".ogg", ".opus"}
+MIN_LORA_FILES = 5
+MAX_LORA_FILES = 10
+
+_redis_pool = redis_lib.ConnectionPool.from_url(settings.REDIS_URL)
 
 app = FastAPI(
     title="ACE-Step Music Generation API",
@@ -54,6 +61,29 @@ class LoraTrainResponse(BaseModel):
     style_name: str
 
 
+def _extract_audio_from_zip(archive_content: bytes, tmp_dir: str) -> List[str]:
+    zip_path = os.path.join(tmp_dir, "audio.zip")
+    with open(zip_path, "wb") as f:
+        f.write(archive_content)
+
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        for member in zip_ref.namelist():
+            member_path = os.path.realpath(os.path.join(tmp_dir, member))
+            if not member_path.startswith(os.path.realpath(tmp_dir) + os.sep):
+                raise HTTPException(status_code=400, detail="Invalid archive: path traversal detected")
+        zip_ref.extractall(tmp_dir)
+
+    os.remove(zip_path)
+
+    audio_files = []
+    for root_dir, _, files in os.walk(tmp_dir):
+        for file in files:
+            if os.path.splitext(file)[1].lower() in AUDIO_EXTENSIONS:
+                audio_files.append(os.path.join(root_dir, file))
+
+    return audio_files
+
+
 @app.get("/", tags=["Health"])
 async def root():
     return {
@@ -73,8 +103,7 @@ async def root():
 async def health_check():
     redis_ok = False
     try:
-        import redis as redis_lib
-        r = redis_lib.from_url(settings.REDIS_URL)
+        r = redis_lib.Redis(connection_pool=_redis_pool)
         r.ping()
         redis_ok = True
     except Exception:
@@ -95,7 +124,6 @@ async def generate(request: GenerationRequest):
     from tasks.generation_tasks import generate_track
 
     generation_params = request.model_dump(exclude_none=True)
-
     generate_track.apply_async(args=[task_id, generation_params], task_id=task_id)
 
     return GenerationResponse(task_id=task_id, status="pending")
@@ -171,38 +199,20 @@ async def train_lora(
         raise HTTPException(status_code=400, detail="Please upload a ZIP archive")
 
     tmp_dir = tempfile.mkdtemp(prefix="lora_train_")
-    zip_path = os.path.join(tmp_dir, "audio.zip")
 
     try:
         content = await audio_archive.read()
-        with open(zip_path, "wb") as f:
-            f.write(content)
+        audio_files = _extract_audio_from_zip(content, tmp_dir)
 
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            for member in zip_ref.namelist():
-                member_path = os.path.realpath(os.path.join(tmp_dir, member))
-                if not member_path.startswith(os.path.realpath(tmp_dir) + os.sep):
-                    raise HTTPException(status_code=400, detail="Invalid archive: path traversal detected")
-            zip_ref.extractall(tmp_dir)
-
-        os.remove(zip_path)
-
-        audio_extensions = {".mp3", ".wav", ".flac", ".ogg", ".opus"}
-        audio_files = []
-        for root_dir, dirs, files in os.walk(tmp_dir):
-            for file in files:
-                if os.path.splitext(file)[1].lower() in audio_extensions:
-                    audio_files.append(os.path.join(root_dir, file))
-
-        if len(audio_files) < 5:
+        if len(audio_files) < MIN_LORA_FILES:
             raise HTTPException(
                 status_code=400,
-                detail=f"Need at least 5 audio files for LoRA training, got {len(audio_files)}",
+                detail=f"Need at least {MIN_LORA_FILES} audio files for LoRA training, got {len(audio_files)}",
             )
-        if len(audio_files) > 10:
+        if len(audio_files) > MAX_LORA_FILES:
             raise HTTPException(
                 status_code=400,
-                detail=f"Maximum 10 audio files for LoRA training, got {len(audio_files)}",
+                detail=f"Maximum {MAX_LORA_FILES} audio files for LoRA training, got {len(audio_files)}",
             )
 
         task_id = str(uuid.uuid4())
@@ -217,9 +227,12 @@ async def train_lora(
             style_name=style_name,
         )
     except zipfile.BadZipFile:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail="Invalid ZIP archive")
     except HTTPException:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
         raise
     except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
         logger.error(f"Failed to process training request: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

@@ -1,0 +1,15 @@
+checkpoints/
+generated_audio/
+lora_models/
+.git/
+.gitignore
+.pythonlibs/
+.uv/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.log
+.env
+.cache/
+replit.md

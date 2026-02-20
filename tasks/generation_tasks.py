@@ -47,10 +47,23 @@ def generate_track(self, task_id: str, generation_params: Dict[str, Any]):
         }
 
 
+def _find_lora_train_tmp_dir(audio_paths: List[str]) -> str | None:
+    for path in audio_paths:
+        parent = os.path.dirname(path)
+        if parent.startswith("/tmp") and os.path.basename(parent).startswith("lora_train_"):
+            return parent
+        grandparent = os.path.dirname(parent)
+        if grandparent.startswith("/tmp") and os.path.basename(grandparent).startswith("lora_train_"):
+            return grandparent
+    return None
+
+
 @celery_app.task(bind=True, name="tasks.train_lora")
 def train_lora_task(self, style_name: str, audio_files_paths: List[str]):
     scan_dir = None
     tensor_dir = None
+    upload_tmp_dir = _find_lora_train_tmp_dir(audio_files_paths)
+
     try:
         self.update_state(state="PROGRESS", meta={"status": "loading_model"})
 
@@ -71,7 +84,6 @@ def train_lora_task(self, style_name: str, audio_files_paths: List[str]):
             if os.path.exists(audio_path):
                 dest = os.path.join(scan_dir, os.path.basename(audio_path))
                 shutil.copy2(audio_path, dest)
-
                 caption_file = dest.rsplit(".", 1)[0] + ".caption.txt"
                 with open(caption_file, "w") as f:
                     f.write(style_name)
@@ -82,10 +94,7 @@ def train_lora_task(self, style_name: str, audio_files_paths: List[str]):
         logger.info(f"Scan result: {scan_status}")
 
         if not samples:
-            return {
-                "status": "failed",
-                "error": "No valid audio files found after scanning",
-            }
+            return {"status": "failed", "error": "No valid audio files found after scanning"}
 
         for sample in builder.samples:
             if not sample.labeled:
@@ -96,7 +105,6 @@ def train_lora_task(self, style_name: str, audio_files_paths: List[str]):
         logger.info(f"Preprocessing {labeled_count} labeled audio files for LoRA training")
 
         tensor_dir = tempfile.mkdtemp(prefix="lora_tensors_")
-
         output_paths, preprocess_status = builder.preprocess_to_tensors(
             dit_handler=dit_handler,
             output_dir=tensor_dir,
@@ -104,19 +112,11 @@ def train_lora_task(self, style_name: str, audio_files_paths: List[str]):
         logger.info(f"Preprocess result: {preprocess_status}")
 
         if not output_paths:
-            return {
-                "status": "failed",
-                "error": f"Preprocessing failed: {preprocess_status}",
-            }
+            return {"status": "failed", "error": f"Preprocessing failed: {preprocess_status}"}
 
         self.update_state(state="PROGRESS", meta={"status": "training"})
 
-        lora_config = LoRAConfig(
-            r=8,
-            alpha=16,
-            dropout=0.1,
-        )
-
+        lora_config = LoRAConfig(r=8, alpha=16, dropout=0.1)
         training_config = TrainingConfig(
             learning_rate=1e-4,
             batch_size=1,
@@ -156,30 +156,11 @@ def train_lora_task(self, style_name: str, audio_files_paths: List[str]):
 
     except ImportError as e:
         logger.error(f"ACE-Step training modules not available: {e}")
-        return {
-            "status": "failed",
-            "error": f"Training modules not available: {e}",
-        }
+        return {"status": "failed", "error": f"Training modules not available: {e}"}
     except Exception as e:
         logger.error(f"LoRA training failed for style {style_name}: {e}")
-        return {
-            "status": "failed",
-            "error": str(e),
-        }
+        return {"status": "failed", "error": str(e)}
     finally:
-        if tensor_dir and os.path.isdir(tensor_dir):
-            shutil.rmtree(tensor_dir, ignore_errors=True)
-        if scan_dir and os.path.isdir(scan_dir):
-            shutil.rmtree(scan_dir, ignore_errors=True)
-        for path in audio_files_paths:
-            try:
-                tmp_dir = path
-                while tmp_dir and tmp_dir != "/":
-                    parent = os.path.dirname(tmp_dir)
-                    if parent.startswith("/tmp") and os.path.basename(parent).startswith("lora_train_"):
-                        if os.path.isdir(parent):
-                            shutil.rmtree(parent, ignore_errors=True)
-                        break
-                    tmp_dir = parent
-            except Exception:
-                pass
+        for d in (tensor_dir, scan_dir, upload_tmp_dir):
+            if d and os.path.isdir(d):
+                shutil.rmtree(d, ignore_errors=True)

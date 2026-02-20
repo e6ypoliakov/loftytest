@@ -45,7 +45,7 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 pip install git+https://github.com/ace-step/ACE-Step-1.5.git
 
 # 4. Установите зависимости API
-pip install -r requirements.txt
+pip install -e .
 
 # 5. Запуск
 chmod +x start.sh
