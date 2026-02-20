@@ -1,0 +1,78 @@
+# ПРОМПТ ДЛЯ РЕАЛИЗАЦИИ ПРОЕКТА В REPLIT
+
+## Роль
+Ты — senior Python-разработчик и ML-инженер. Твоя задача — написать код для создания REST API сервиса на базе модели ACE-Step 1.5 в среде Replit. Следуй инструкциям строго по порядку.
+
+## Этап 1: Инициализация и установка зависимостей
+1.  Создай файл `pyproject.toml` с указанием Python 3.11 и зависимостями: `fastapi`, `uvicorn[standard]`, `celery[redis]`, `redis`, `pydantic`, `python-multipart`.
+2.  Добавь зависимость для модели, прописав установку из GitHub: `ace-step @ git+https://github.com/ace-step/ACE-Step-1.5.git`.
+3.  Создай файл `.replit` для настройки команды запуска (например, `run="uvicorn api.main:app --reload --host 0.0.0.0 --port 8000"`).
+4.  Напиши bash-скрипт `setup.sh`, который:
+    *   Устанавливает `uv` (curl -LsSf https://astral.sh/uv/install.sh | sh).
+    *   Создает виртуальное окружение и устанавливает все зависимости через `uv pip install -e .` (или через `uv sync`).
+    *   Скачивает необходимые модели (это произойдет автоматически при первом запуске, но можно создать команду для пре-загрузки).
+
+## Этап 2: Создание ядра сервиса (Core)
+1.  Создай модуль `core/config.py` для Pydantic Settings. В нем должны быть переменные окружения:
+    *   `REDIS_URL`: строка подключения к Redis.
+    *   `MODEL_PATH`: путь к модели (оставь `None` для авто-загрузки).
+    *   `OUTPUT_DIR`: папка для сохранения аудио (например, `generated_audio`).
+    *   `HF_TOKEN` (опционально): для доступа к моделям на Hugging Face.
+2.  Создай модуль `core/models.py`, где будет класс для работы с ACE-Step. Опиши функцию `load_models()`, которая инициализирует LM и DiT модели (как в примерах из документации). Используй `config.MODEL_PATH` для указания конкретной версии (например, `acestep-v15-turbo` для лучшего качества).
+3.  В этом же модуле создай функцию `generate_music(params)`, которая принимает словарь с параметрами (промпт, длительность, стили и т.д.) и возвращает путь к сгенерированному файлу. Используй `ace_step.generate()`.
+
+## Этап 3: Настройка очереди задач (Celery)
+1.  Создай модуль `core/celery_app.py`.
+2.  Инициализируй в нем Celery с именем `tasks` и брокером `redis://localhost:6379/0` (значение из config).
+3.  Создай модуль `tasks/generation_tasks.py`.
+4.  В нем напиши задачу `generate_track(task_id, generation_params)`:
+    *   Задача должна быть обернута в `@celery_app.task`.
+    *   Внутри задачи вызови `core.models.load_models()` (с кэшированием, чтобы модель загружалась один раз на воркер).
+    *   Вызови `core.models.generate_music(generation_params)`.
+    *   Сохрани результат в папку `OUTPUT_DIR` с именем файла, содержащим `task_id`.
+    *   Верни словарь `{"file_path": relative_path, "status": "success"}` или сообщение об ошибке.
+
+## Этап 4: REST API слой (FastAPI)
+1.  Создай модуль `api/main.py`.
+2.  Создай приложение FastAPI.
+3.  Определи Pydantic модели для запросов и ответов:
+    *   `class GenerationRequest(BaseModel)`: должен содержать поля `prompt` (str), `duration` (int, сек), `lyrics` (str, опционально), `style` (str, опционально), `reference_audio` (base64, опционально).
+    *   `class GenerationResponse(BaseModel)`: должен содержать `task_id` (str) и `status` (str).
+    *   `class StatusResponse(BaseModel)`: должен содержать `task_id`, `status` (pending/success/failed), `file_url` (если готов).
+4.  Создай эндпоинт `POST /generate`:
+    *   Принимает `GenerationRequest`.
+    *   Генерирует уникальный `task_id` (например, `uuid4`).
+    *   Отправляет задачу `generate_track.delay(task_id, request.dict())` в Celery.
+    *   Возвращает `GenerationResponse`.
+5.  Создай эндпоинт `GET /status/{task_id}`:
+    *   Проверяет статус задачи в Celery (AsyncResult).
+    *   Если задача выполнена, возвращает `StatusResponse` со ссылкой на скачивание файла.
+    *   Добавь простую файловую раздачу: эндпоинт `GET /files/{filename}` для отдачи сгенерированных mp3/wav файлов.
+
+## Этап 5: Файнтюнинг и настройки качества (LoRA)
+1.  В модуле `api/main.py` добавь эндпоинт `POST /train/lora`:
+    *   Принимает `zip` архив с аудиофайлами (5-10 треков) и `style_name`.
+    *   Создает задачу в Celery `train_lora_task`.
+2.  В `tasks/generation_tasks.py` реализуй задачу `train_lora_task(audio_files_paths, style_name)`:
+    *   Используй встроенный функционал ACE-Step для LoRA-тренировки (см. раздел "Train" в документации).
+    *   Для этого нужно будет временно сохранить файлы, запустить процесс аннотации и обучения (как в Gradio, но программно).
+    *   После успешного обучения сохраняем путь к адаптеру и возвращаем его ID.
+3.  Модифицируй `GenerationRequest` добавить опциональное поле `lora_id` или `style_id`, чтобы при генерации воркер подгружал нужный LoRA-адаптер для улучшения качества и стилизации.
+
+## Этап 6: Интеграция с GPU-фермой (Масштабирование)
+Так как в Replit мы ограничены одним GPU, наша задача — подготовить код к такому масштабированию.
+1.  Сделай так, чтобы переменная `REDIS_URL` в `config.py` могла указывать на внешний Redis (например, Redis Cloud).
+2.  Создай отдельный `Dockerfile` в корне проекта:
+    *   Базовый образ: `nvidia/cuda:12.1-runtime-ubuntu22.04`.
+    *   Установка Python 3.11, `uv`.
+    *   Копирование кода и зависимостей.
+    *   **Команда по умолчанию:** `celery -A core.celery_app worker --loglevel=info --concurrency=1` (concurrency=1, так как на одной GPU лучше запускать одну задачу за раз).
+3.  В `README.md` пропиши инструкцию:
+    *   "Для деплоя воркера на GPU-ферме: запустите Redis по адресу `...`, установите переменную окружения `REDIS_URL`, соберите Docker образ и запустите контейнер с флагом `--gpus all`".
+
+## Этап 7: Запуск и проверка в Replit
+1.  Убедись, что в Replit включен Always-On (если нужно, чтобы API висело постоянно).
+2.  Запусти Redis внутри Replit (добавь его в конфигурацию или используй встроенный пакет).
+3.  Запусти Celery worker в отдельной вкладке Shell: `celery -A core.celery_app worker --loglevel=info`.
+4.  Запусти FastAPI сервер через кнопку Run.
+5.  Протестируй эндпоинты через встроенный Swagger UI (`/docs`).
