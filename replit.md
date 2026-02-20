@@ -4,6 +4,9 @@
 REST API сервис для генерации музыки через модель ACE-Step 1.5. Проект предназначен для локального запуска на компьютере с NVIDIA GPU. FastAPI + Celery + Redis.
 
 ## Recent Changes
+- 2026-02-20: Добавлен deploy.bat для Windows (полный аналог deploy.sh). Обновлён README.md.
+- 2026-02-20: Добавлены unit-тесты (52 теста): endpoints, validation, helpers, config. pytest + starlette TestClient.
+- 2026-02-20: Bugfixes: CORS middleware, filename None check, dynamic media_type, Flower на CPU-образе, Pydantic v2 config.
 - 2026-02-20: Создан deploy.sh с 3 сценариями (CPU/GPU/Farm), docker-compose.cpu.yml, docker-compose.gpu.yml, docker-compose.farm.yml. Удалены start_docker.sh и docker-compose.yml. Добавлен Dockerfile.cpu, Flower для мониторинга фермы.
 - 2026-02-20: Рефакторинг: удалены main.py и requirements.txt, core/models.py разбит на функции, ZIP-обработка вынесена, Redis connection pool, Dockerfile переведён на pyproject.toml.
 - 2026-02-20: Полный аудит ACE-Step API, проект переделан для локального запуска с GPU.
@@ -17,10 +20,10 @@ REST API сервис для генерации музыки через моде
 - **Flower** — Celery monitoring dashboard (Farm mode only)
 
 ## Docker Deploy Modes
-- `deploy.sh cpu` — Dockerfile.cpu + docker-compose.cpu.yml (no CUDA)
-- `deploy.sh gpu` — Dockerfile + docker-compose.gpu.yml (single GPU)
-- `deploy.sh farm` — Dockerfile + docker-compose.farm.yml (multi-GPU, Flower, scaling)
-- `deploy.sh stop` — stop all configurations
+- `deploy.sh cpu` / `deploy.bat cpu` — Dockerfile.cpu + docker-compose.cpu.yml (no CUDA)
+- `deploy.sh gpu` / `deploy.bat gpu` — Dockerfile + docker-compose.gpu.yml (single GPU)
+- `deploy.sh farm` / `deploy.bat farm` — Dockerfile + docker-compose.farm.yml (multi-GPU, Flower, scaling)
+- `deploy.sh stop` / `deploy.bat stop` — stop all configurations
 
 ## ACE-Step 1.5 API Notes
 Key API details verified against actual library source:
@@ -43,7 +46,9 @@ tasks/generation_tasks.py - Celery tasks (generate, train LoRA)
 generated_audio/         - Output audio files (gitignored)
 lora_models/             - LoRA adapter storage (gitignored)
 checkpoints/             - Model weights (gitignored, auto-downloaded)
-deploy.sh                - Unified Docker deploy script (CPU/GPU/Farm)
+tests/                   - Unit tests (pytest, 52 tests)
+deploy.sh                - Docker deploy script (Linux/macOS)
+deploy.bat               - Docker deploy script (Windows)
 docker-compose.cpu.yml   - Docker Compose for CPU mode
 docker-compose.gpu.yml   - Docker Compose for single GPU
 docker-compose.farm.yml  - Docker Compose for GPU farm + Flower

@@ -11,6 +11,8 @@ REST API сервис для генерации музыки с помощью �
 
 Один скрипт — три режима: CPU, GPU, GPU-ферма.
 
+### Linux / macOS
+
 ```bash
 chmod +x deploy.sh
 ./deploy.sh
@@ -24,6 +26,23 @@ chmod +x deploy.sh
 ./deploy.sh farm    # Несколько GPU + мониторинг
 ./deploy.sh stop    # Остановить все
 ```
+
+### Windows
+
+```cmd
+deploy.bat
+```
+
+Или напрямую без меню:
+
+```cmd
+deploy.bat cpu      &:: Без видеокарты (тест/разработка)
+deploy.bat gpu      &:: Одна NVIDIA GPU
+deploy.bat farm     &:: Несколько GPU + мониторинг
+deploy.bat stop     &:: Остановить все
+```
+
+> **Требования для Windows:** [Docker Desktop](https://docs.docker.com/desktop/install/windows-install/). Для GPU-режимов: NVIDIA GPU + включить GPU в Docker Desktop (Settings → Resources → GPU).
 
 ### 1. CPU — без видеокарты
 
@@ -84,7 +103,9 @@ docker compose -f docker-compose.farm.yml up --build -d --scale worker=4
 │   └── generation_tasks.py    # Celery задачи (генерация, LoRA)
 ├── generated_audio/           # Выходные аудиофайлы
 ├── lora_models/               # LoRA адаптеры
-├── deploy.sh                  # Единый скрипт развёртывания
+├── tests/                     # Unit-тесты (pytest)
+├── deploy.sh                  # Скрипт развёртывания (Linux/macOS)
+├── deploy.bat                 # Скрипт развёртывания (Windows)
 ├── docker-compose.cpu.yml     # Docker: CPU-режим
 ├── docker-compose.gpu.yml     # Docker: GPU-режим
 ├── docker-compose.farm.yml    # Docker: GPU-ферма
