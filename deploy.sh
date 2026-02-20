@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -8,6 +7,8 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
+
+LOGFILE="deploy.log"
 
 print_header() {
     echo ""
@@ -21,6 +22,43 @@ print_status() { echo -e "${GREEN}[✓]${NC} $1"; }
 print_warn()   { echo -e "${YELLOW}[!]${NC} $1"; }
 print_error()  { echo -e "${RED}[✗]${NC} $1"; }
 print_info()   { echo -e "${BLUE}[→]${NC} $1"; }
+
+log_init() {
+    echo "=== ACE-Step Deploy Log ===" > "${LOGFILE}"
+    echo "Дата: $(date)" >> "${LOGFILE}"
+    echo "Режим: $1" >> "${LOGFILE}"
+    echo "===========================" >> "${LOGFILE}"
+    echo "" >> "${LOGFILE}"
+}
+
+run_docker() {
+    local description="$1"
+    shift
+    print_info "${description}"
+    echo "" >> "${LOGFILE}"
+    echo ">>> ${description}" >> "${LOGFILE}"
+    echo ">>> Команда: $*" >> "${LOGFILE}"
+    echo "" >> "${LOGFILE}"
+
+    "$@" 2>&1 | tee -a "${LOGFILE}"
+    local exit_code=${PIPESTATUS[0]}
+
+    if [[ ${exit_code} -ne 0 ]]; then
+        echo "" >> "${LOGFILE}"
+        echo ">>> ОШИБКА: код выхода ${exit_code}" >> "${LOGFILE}"
+        echo ""
+        print_error "${description} — не удалось (код: ${exit_code})"
+        echo ""
+        echo -e "${YELLOW}═══ Последние строки лога: ═══${NC}"
+        tail -30 "${LOGFILE}" | grep -v "^>>>"
+        echo -e "${YELLOW}══════════════════════════════${NC}"
+        echo ""
+        print_info "Полный лог: ${CYAN}${LOGFILE}${NC}"
+        print_info "Диагностика Docker: ${CYAN}docker compose logs${NC}"
+        return 1
+    fi
+    return 0
+}
 
 check_docker() {
     if ! command -v docker &> /dev/null; then
@@ -85,14 +123,18 @@ show_menu() {
 }
 
 deploy_cpu() {
+    log_init "CPU"
     echo ""
     echo -e "${BOLD}═══ Режим: CPU ═══${NC}"
     echo ""
-    print_info "Сборка образов (CPU, без CUDA)..."
-    docker compose -f docker-compose.cpu.yml build
 
-    print_info "Запуск сервисов..."
-    docker compose -f docker-compose.cpu.yml up -d
+    if ! run_docker "Сборка образов (CPU, без CUDA)..." docker compose -f docker-compose.cpu.yml build; then
+        return 1
+    fi
+
+    if ! run_docker "Запуск сервисов..." docker compose -f docker-compose.cpu.yml up -d; then
+        return 1
+    fi
 
     echo ""
     print_status "Сервисы запущены!"
@@ -110,6 +152,7 @@ deploy_cpu() {
 }
 
 deploy_gpu() {
+    log_init "GPU"
     echo ""
     echo -e "${BOLD}═══ Режим: GPU ═══${NC}"
     echo ""
@@ -119,11 +162,13 @@ deploy_gpu() {
         return 1
     fi
 
-    print_info "Сборка образов (CUDA 12.1)..."
-    docker compose -f docker-compose.gpu.yml build
+    if ! run_docker "Сборка образов (CUDA 12.1)..." docker compose -f docker-compose.gpu.yml build; then
+        return 1
+    fi
 
-    print_info "Запуск сервисов..."
-    docker compose -f docker-compose.gpu.yml up -d
+    if ! run_docker "Запуск сервисов..." docker compose -f docker-compose.gpu.yml up -d; then
+        return 1
+    fi
 
     echo ""
     print_status "Сервисы запущены!"
@@ -195,11 +240,15 @@ deploy_farm() {
     export FLOWER_PORT="${flower_port}"
     export WORKER_MEMORY="${worker_mem}"
 
-    print_info "Сборка образов (CUDA 12.1)..."
-    docker compose -f docker-compose.farm.yml build
+    log_init "Farm (workers=${workers})"
 
-    print_info "Запуск фермы: ${workers} GPU воркер(ов)..."
-    docker compose -f docker-compose.farm.yml up -d --scale worker="${workers}"
+    if ! run_docker "Сборка образов (CUDA 12.1)..." docker compose -f docker-compose.farm.yml build; then
+        return 1
+    fi
+
+    if ! run_docker "Запуск фермы: ${workers} GPU воркер(ов)..." docker compose -f docker-compose.farm.yml up -d --scale worker="${workers}"; then
+        return 1
+    fi
 
     echo ""
     print_status "Ферма запущена!"

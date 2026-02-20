@@ -12,6 +12,8 @@ set "CYAN=%ESC%[96m"
 set "BOLD=%ESC%[1m"
 set "NC=%ESC%[0m"
 
+set "LOGFILE=deploy.log"
+
 goto :main
 
 :print_header
@@ -37,6 +39,40 @@ exit /b
 :print_info
 echo %BLUE%[→]%NC% %~1
 exit /b
+
+:log_init
+echo === ACE-Step Deploy Log === > "!LOGFILE!"
+echo Дата: %date% %time% >> "!LOGFILE!"
+echo Режим: %~1 >> "!LOGFILE!"
+echo =========================== >> "!LOGFILE!"
+echo. >> "!LOGFILE!"
+exit /b
+
+:run_docker
+set "RD_DESC=%~1"
+set "RD_CMD=%~2"
+call :print_info "!RD_DESC!"
+echo. >> "!LOGFILE!"
+echo ^>^>^> !RD_DESC! >> "!LOGFILE!"
+echo ^>^>^> Команда: !RD_CMD! >> "!LOGFILE!"
+echo. >> "!LOGFILE!"
+set "RD_TMPLOG=%TEMP%\acestep_docker_%RANDOM%.log"
+cmd /c "!RD_CMD!" > "!RD_TMPLOG!" 2>&1
+set "RD_EXIT=!errorlevel!"
+type "!RD_TMPLOG!"
+type "!RD_TMPLOG!" >> "!LOGFILE!"
+del "!RD_TMPLOG!" >nul 2>&1
+if !RD_EXIT! neq 0 (
+    echo. >> "!LOGFILE!"
+    echo ^>^>^> ОШИБКА: код выхода !RD_EXIT! >> "!LOGFILE!"
+    echo.
+    call :print_error "!RD_DESC! — не удалось (код: !RD_EXIT!)"
+    call :print_info "Полный лог: %CYAN%!LOGFILE!%NC%"
+    call :print_info "Диагностика Docker: %CYAN%docker compose logs%NC%"
+    exit /b 1
+)
+call :print_status "!RD_DESC! — OK"
+exit /b 0
 
 :check_docker
 where docker >nul 2>&1
@@ -88,22 +124,15 @@ if not errorlevel 1 (
 exit /b
 
 :deploy_cpu
+call :log_init "CPU"
 echo.
 echo %BOLD%═══ Режим: CPU ═══%NC%
 echo.
-call :print_info "Сборка образов (CPU, без CUDA)..."
-docker compose -f docker-compose.cpu.yml build
-if errorlevel 1 (
-    call :print_error "Ошибка сборки. Проверьте Docker и попробуйте снова."
-    exit /b 1
-)
+call :run_docker "Сборка образов (CPU, без CUDA)" "docker compose -f docker-compose.cpu.yml build"
+if errorlevel 1 goto :pause_on_error
 
-call :print_info "Запуск сервисов..."
-docker compose -f docker-compose.cpu.yml up -d
-if errorlevel 1 (
-    call :print_error "Ошибка запуска."
-    exit /b 1
-)
+call :run_docker "Запуск сервисов" "docker compose -f docker-compose.cpu.yml up -d"
+if errorlevel 1 goto :pause_on_error
 
 echo.
 call :print_status "Сервисы запущены!"
@@ -121,6 +150,7 @@ call :print_warn "CPU-режим: генерация будет медленно
 exit /b 0
 
 :deploy_gpu
+call :log_init "GPU"
 echo.
 echo %BOLD%═══ Режим: GPU ═══%NC%
 echo.
@@ -128,22 +158,14 @@ echo.
 call :check_gpu
 if errorlevel 1 (
     call :print_error "GPU недоступен. Используйте CPU-режим или настройте GPU в Docker Desktop."
-    exit /b 1
+    goto :pause_on_error
 )
 
-call :print_info "Сборка образов (CUDA 12.1)..."
-docker compose -f docker-compose.gpu.yml build
-if errorlevel 1 (
-    call :print_error "Ошибка сборки."
-    exit /b 1
-)
+call :run_docker "Сборка образов (CUDA 12.1)" "docker compose -f docker-compose.gpu.yml build"
+if errorlevel 1 goto :pause_on_error
 
-call :print_info "Запуск сервисов..."
-docker compose -f docker-compose.gpu.yml up -d
-if errorlevel 1 (
-    call :print_error "Ошибка запуска."
-    exit /b 1
-)
+call :run_docker "Запуск сервисов" "docker compose -f docker-compose.gpu.yml up -d"
+if errorlevel 1 goto :pause_on_error
 
 echo.
 call :print_status "Сервисы запущены!"
@@ -167,7 +189,7 @@ echo.
 call :check_gpu
 if errorlevel 1 (
     call :print_error "GPU недоступен. Установите драйверы NVIDIA и настройте GPU в Docker Desktop."
-    exit /b 1
+    goto :pause_on_error
 )
 
 call :detect_gpu_count
@@ -211,19 +233,13 @@ if /i "!CONFIRM!"=="n" (
 
 set "GPU_WORKERS=!WORKERS!"
 
-call :print_info "Сборка образов (CUDA 12.1)..."
-docker compose -f docker-compose.farm.yml build
-if errorlevel 1 (
-    call :print_error "Ошибка сборки."
-    exit /b 1
-)
+call :log_init "Farm (workers=!WORKERS!)"
 
-call :print_info "Запуск фермы: !WORKERS! GPU воркер(ов)..."
-docker compose -f docker-compose.farm.yml up -d --scale worker=!WORKERS!
-if errorlevel 1 (
-    call :print_error "Ошибка запуска."
-    exit /b 1
-)
+call :run_docker "Сборка образов (CUDA 12.1)" "docker compose -f docker-compose.farm.yml build"
+if errorlevel 1 goto :pause_on_error
+
+call :run_docker "Запуск фермы: !WORKERS! GPU воркер(ов)" "docker compose -f docker-compose.farm.yml up -d --scale worker=!WORKERS!"
+if errorlevel 1 goto :pause_on_error
 
 echo.
 call :print_status "Ферма запущена!"
@@ -273,32 +289,40 @@ echo   %CYAN%0%NC%) Выход
 echo.
 exit /b
 
+:pause_on_error
+echo.
+call :print_error "Развёртывание прервано из-за ошибки."
+call :print_info "Изучите лог выше или файл: %CYAN%!LOGFILE!%NC%"
+echo.
+pause
+goto :end
+
 :main
 call :print_header
 
 if "%~1"=="cpu" (
     call :check_docker
     if not errorlevel 1 call :deploy_cpu
-    goto :end
+    goto :end_pause
 )
 if "%~1"=="gpu" (
     call :check_docker
     if not errorlevel 1 call :deploy_gpu
-    goto :end
+    goto :end_pause
 )
 if "%~1"=="farm" (
     call :check_docker
     if not errorlevel 1 call :deploy_farm
-    goto :end
+    goto :end_pause
 )
 if "%~1"=="stop" (
     call :check_docker
     if not errorlevel 1 call :stop_all
-    goto :end
+    goto :end_pause
 )
 
 call :check_docker
-if errorlevel 1 goto :end
+if errorlevel 1 goto :end_pause
 
 echo.
 call :check_gpu >nul 2>&1
@@ -328,6 +352,8 @@ if not "!CHOICE!"=="1" if not "!CHOICE!"=="2" if not "!CHOICE!"=="3" if not "!CH
     call :print_error "Неверный выбор: !CHOICE!"
 )
 
-:end
+:end_pause
 echo.
+pause
+:end
 endlocal
