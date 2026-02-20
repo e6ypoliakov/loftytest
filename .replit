@@ -40,5 +40,5 @@ waitForPort = 5000
 outputType = "webview"
 
 [deployment]
-deploymentTarget = "vm"
+deploymentTarget = "cloudrun"
 run = ["bash", "start.sh"]
