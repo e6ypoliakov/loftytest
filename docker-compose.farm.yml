@@ -1,0 +1,106 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${API_PORT:-5000}:5000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - MODEL_PATH=${MODEL_PATH:-acestep-v15-turbo}
+      - OUTPUT_DIR=/app/generated_audio
+      - LORA_DIR=/app/lora_models
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - shared_audio:/app/generated_audio
+      - shared_lora:/app/lora_models
+      - model_cache:/root/.cache/huggingface
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: >
+      uvicorn api.main:app
+      --host 0.0.0.0
+      --port 5000
+      --workers ${API_WORKERS:-2}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "${API_CPUS:-2.0}"
+          memory: "${API_MEMORY:-2G}"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - MODEL_PATH=${MODEL_PATH:-acestep-v15-turbo}
+      - OUTPUT_DIR=/app/generated_audio
+      - LORA_DIR=/app/lora_models
+      - TOKENIZERS_PARALLELISM=false
+      - HF_TOKEN=${HF_TOKEN:-}
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+    volumes:
+      - shared_audio:/app/generated_audio
+      - shared_lora:/app/lora_models
+      - model_cache:/root/.cache/huggingface
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: ${GPU_WORKERS:-1}
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: "${WORKER_MEMORY:-8G}"
+    command: ["celery", "-A", "core.celery_app", "worker", "--loglevel=info", "--pool=solo", "--concurrency=1"]
+    restart: unless-stopped
+
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${FLOWER_PORT:-5555}:5555"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["celery", "-A", "core.celery_app", "flower", "--port=5555", "--broker_api=redis://redis:6379/0"]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "256M"
+
+volumes:
+  redis_data:
+  model_cache:
+  shared_audio:
+  shared_lora:
