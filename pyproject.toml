@@ -16,6 +16,7 @@ dependencies = [
     "pydantic-settings>=2.9.0",
     "python-multipart>=0.0.20",
     "soundfile>=0.13.1",
+    "flower>=2.0.0",
     "ace-step @ git+https://github.com/ace-step/ACE-Step-1.5.git",
 ]
 

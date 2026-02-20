@@ -30,8 +30,8 @@ services:
       - LORA_DIR=/app/lora_models
       - HF_TOKEN=${HF_TOKEN:-}
     volumes:
-      - shared_audio:/app/generated_audio
-      - shared_lora:/app/lora_models
+      - ./generated_audio:/app/generated_audio
+      - ./lora_models:/app/lora_models
       - model_cache:/root/.cache/huggingface
     depends_on:
       redis:
@@ -61,14 +61,13 @@ services:
       - HF_TOKEN=${HF_TOKEN:-}
       - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
     volumes:
-      - shared_audio:/app/generated_audio
-      - shared_lora:/app/lora_models
+      - ./generated_audio:/app/generated_audio
+      - ./lora_models:/app/lora_models
       - model_cache:/root/.cache/huggingface
     depends_on:
       redis:
         condition: service_healthy
     deploy:
-      replicas: ${GPU_WORKERS:-1}
       resources:
         reservations:
           devices:
@@ -102,5 +101,3 @@ services:
 volumes:
   redis_data:
   model_cache:
-  shared_audio:
-  shared_lora:

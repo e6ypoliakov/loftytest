@@ -199,7 +199,7 @@ deploy_farm() {
     docker compose -f docker-compose.farm.yml build
 
     print_info "Запуск фермы: ${workers} GPU воркер(ов)..."
-    docker compose -f docker-compose.farm.yml up -d
+    docker compose -f docker-compose.farm.yml up -d --scale worker="${workers}"
 
     echo ""
     print_status "Ферма запущена!"

@@ -4,17 +4,24 @@
 REST API сервис для генерации музыки через модель ACE-Step 1.5. Проект предназначен для локального запуска на компьютере с NVIDIA GPU. FastAPI + Celery + Redis.
 
 ## Recent Changes
-- 2026-02-20: Рефакторинг: удалены main.py и requirements.txt (дубликат pyproject.toml), core/models.py разбит на функции, ZIP-обработка вынесена из эндпоинта, Redis connection pool, упрощена очистка tmp-директорий, Dockerfile переведён на pyproject.toml.
-- 2026-02-20: Полный аудит: GenerationResult.audios, DatasetBuilder.scan_directory, AudioSample без tags, pydantic-settings defaults, .opus вместо .m4a.
-- 2026-02-20: Проект переделан для локального запуска с GPU. Docker Compose для полного стека.
+- 2026-02-20: Создан deploy.sh с 3 сценариями (CPU/GPU/Farm), docker-compose.cpu.yml, docker-compose.gpu.yml, docker-compose.farm.yml. Удалены start_docker.sh и docker-compose.yml. Добавлен Dockerfile.cpu, Flower для мониторинга фермы.
+- 2026-02-20: Рефакторинг: удалены main.py и requirements.txt, core/models.py разбит на функции, ZIP-обработка вынесена, Redis connection pool, Dockerfile переведён на pyproject.toml.
+- 2026-02-20: Полный аудит ACE-Step API, проект переделан для локального запуска с GPU.
 
 ## Architecture
 - **FastAPI** serves REST endpoints on port 5000
 - **Celery** handles async music generation and LoRA training tasks (GPU)
 - **Redis** acts as message broker and result backend
 - **ACE-Step 1.5** generates audio on NVIDIA GPU
-- **Docker Compose** orchestrates Redis + API + GPU Worker
+- **Docker Compose** — 3 configs: CPU, GPU, Farm
+- **Flower** — Celery monitoring dashboard (Farm mode only)
 - **start.sh** for local run without Docker
+
+## Docker Deploy Modes
+- `deploy.sh cpu` — Dockerfile.cpu + docker-compose.cpu.yml (no CUDA)
+- `deploy.sh gpu` — Dockerfile + docker-compose.gpu.yml (single GPU)
+- `deploy.sh farm` — Dockerfile + docker-compose.farm.yml (multi-GPU, Flower, scaling)
+- `deploy.sh stop` — stop all configurations
 
 ## ACE-Step 1.5 API Notes
 Key API details verified against actual library source:
@@ -37,12 +44,16 @@ tasks/generation_tasks.py - Celery tasks (generate, train LoRA)
 generated_audio/         - Output audio files (gitignored)
 lora_models/             - LoRA adapter storage (gitignored)
 checkpoints/             - Model weights (gitignored, auto-downloaded)
-docker-compose.yml       - Full stack: Redis + API + GPU Worker
+deploy.sh                - Unified Docker deploy script (CPU/GPU/Farm)
+docker-compose.cpu.yml   - Docker Compose for CPU mode
+docker-compose.gpu.yml   - Docker Compose for single GPU
+docker-compose.farm.yml  - Docker Compose for GPU farm + Flower
 Dockerfile               - GPU worker image (CUDA 12.1)
+Dockerfile.cpu           - CPU-only image (no CUDA)
+.dockerignore            - Excludes checkpoints, cache from builds
 pyproject.toml           - Single source of dependencies
 setup.sh                 - Full setup + model download
 start.sh                 - Local startup script
-start_docker.sh          - Docker startup helper
 README.md                - Documentation (Russian)
 ```
 
@@ -60,6 +71,13 @@ README.md                - Documentation (Russian)
 - HF_TOKEN (optional)
 - LORA_DIR (default: lora_models)
 - ACESTEP_INIT_LLM (default: false)
+
+## Farm Environment Variables
+- GPU_WORKERS (default: 1) - number of GPU workers
+- API_WORKERS (default: 2) - uvicorn process count
+- API_PORT (default: 5000)
+- FLOWER_PORT (default: 5555)
+- WORKER_MEMORY (default: 8G)
 
 ## User Preferences
 - Language: Russian
