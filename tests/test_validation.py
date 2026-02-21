@@ -291,3 +291,111 @@ class TestGenerationRequestValidation:
         from api.main import GenerationRequest
         req = GenerationRequest(prompt="test", instrumental=True)
         assert req.instrumental is True
+
+    def test_seed_boundaries(self):
+        from api.main import GenerationRequest
+        import pydantic
+        req = GenerationRequest(prompt="test", seed=-1)
+        assert req.seed == -1
+        req = GenerationRequest(prompt="test", seed=0)
+        assert req.seed == 0
+        req = GenerationRequest(prompt="test", seed=2147483647)
+        assert req.seed == 2147483647
+        try:
+            GenerationRequest(prompt="test", seed=-2)
+            assert False, "Should reject seed < -1"
+        except pydantic.ValidationError:
+            pass
+
+    def test_shift_boundaries(self):
+        from api.main import GenerationRequest
+        import pydantic
+        req = GenerationRequest(prompt="test", shift=0.1)
+        assert req.shift == 0.1
+        req = GenerationRequest(prompt="test", shift=10.0)
+        assert req.shift == 10.0
+        try:
+            GenerationRequest(prompt="test", shift=0.0)
+            assert False, "Should reject shift < 0.1"
+        except pydantic.ValidationError:
+            pass
+
+    def test_cfg_scale_boundaries(self):
+        from api.main import GenerationRequest
+        import pydantic
+        req = GenerationRequest(prompt="test", cfg_scale=0.0)
+        assert req.cfg_scale == 0.0
+        req = GenerationRequest(prompt="test", cfg_scale=15.0)
+        assert req.cfg_scale == 15.0
+        try:
+            GenerationRequest(prompt="test", cfg_scale=16.0)
+            assert False, "Should reject cfg_scale > 15"
+        except pydantic.ValidationError:
+            pass
+
+    def test_num_steps_boundaries(self):
+        from api.main import GenerationRequest
+        import pydantic
+        req = GenerationRequest(prompt="test", num_steps=1)
+        assert req.num_steps == 1
+        req = GenerationRequest(prompt="test", num_steps=100)
+        assert req.num_steps == 100
+        try:
+            GenerationRequest(prompt="test", num_steps=0)
+            assert False, "Should reject num_steps < 1"
+        except pydantic.ValidationError:
+            pass
+        try:
+            GenerationRequest(prompt="test", num_steps=101)
+            assert False, "Should reject num_steps > 100"
+        except pydantic.ValidationError:
+            pass
+
+    def test_lm_top_k_boundaries(self):
+        from api.main import GenerationRequest
+        import pydantic
+        req = GenerationRequest(prompt="test", lm_top_k=1)
+        assert req.lm_top_k == 1
+        req = GenerationRequest(prompt="test", lm_top_k=500)
+        assert req.lm_top_k == 500
+        try:
+            GenerationRequest(prompt="test", lm_top_k=501)
+            assert False, "Should reject lm_top_k > 500"
+        except pydantic.ValidationError:
+            pass
+
+    def test_repainting_end_accepts_minus_one(self):
+        from api.main import GenerationRequest
+        req = GenerationRequest(prompt="test", repainting_end=-1.0)
+        assert req.repainting_end == -1.0
+
+    def test_repainting_start_boundaries(self):
+        from api.main import GenerationRequest
+        import pydantic
+        req = GenerationRequest(prompt="test", repainting_start=0.0)
+        assert req.repainting_start == 0.0
+        req = GenerationRequest(prompt="test", repainting_start=600.0)
+        assert req.repainting_start == 600.0
+        try:
+            GenerationRequest(prompt="test", repainting_start=-1.0)
+            assert False, "Should reject repainting_start < 0"
+        except pydantic.ValidationError:
+            pass
+
+    def test_lm_max_tokens_boundaries(self):
+        from api.main import GenerationRequest
+        import pydantic
+        req = GenerationRequest(prompt="test", lm_max_tokens=64)
+        assert req.lm_max_tokens == 64
+        req = GenerationRequest(prompt="test", lm_max_tokens=4096)
+        assert req.lm_max_tokens == 4096
+        try:
+            GenerationRequest(prompt="test", lm_max_tokens=63)
+            assert False, "Should reject lm_max_tokens < 64"
+        except pydantic.ValidationError:
+            pass
+        try:
+            GenerationRequest(prompt="test", lm_max_tokens=4097)
+            assert False, "Should reject lm_max_tokens > 4096"
+        except pydantic.ValidationError:
+            pass

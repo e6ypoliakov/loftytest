@@ -142,13 +142,16 @@ class InferMethod(str, Enum):
 class GenerationRequest(BaseModel):
     prompt: str = Field(
         ...,
-        description="Описание стиля музыки. Чем подробнее — тем точнее результат",
+        description="Описание стиля музыки. Чем подробнее — тем точнее результат. "
+        "Тип: строка, обязательное поле",
         json_schema_extra={"examples": ["energetic electronic dance music with heavy bass and synth leads"]},
     )
     task_type: Optional[TaskType] = Field(
         default=TaskType.TEXT2MUSIC,
         description="Тип задачи генерации. "
-        "text2music — создание трека по текстовому описанию (по умолчанию). "
+        "Допустимые значения: text2music | cover | repaint | lego | vocal2bgm | retake. "
+        "По умолчанию: text2music. "
+        "text2music — создание трека по текстовому описанию. "
         "cover — перенос стиля на исходное аудио (нужен src_audio). "
         "repaint — перегенерация фрагмента трека (нужен src_audio + repainting_start/end). "
         "lego — генерация отдельной дорожки поверх исходного аудио (нужен src_audio). "
@@ -159,109 +162,141 @@ class GenerationRequest(BaseModel):
         default=120,
         ge=10,
         le=600,
-        description="Длительность трека в секундах (от 10 до 600). По умолчанию 120 сек (2 минуты)",
+        description="Длительность трека в секундах. "
+        "Диапазон: 10–600. По умолчанию: 120 (2 минуты)",
     )
     lyrics: Optional[str] = Field(
         default=None,
         description="Текст песни с маркерами структуры: [verse], [chorus], [bridge], [intro], [outro]. "
+        "Тип: строка или null. По умолчанию: null (инструментал). "
         "Если не указан — генерируется инструментал",
         json_schema_extra={"examples": ["[verse]\nFeel the rhythm in your soul\n[chorus]\nDance all night long"]},
     )
     instrumental: Optional[bool] = Field(
         default=False,
         description="Генерировать только инструментал (без вокала). "
-        "Если True — поле lyrics игнорируется",
+        "Допустимые значения: true | false. По умолчанию: false. "
+        "Если true — поле lyrics игнорируется",
     )
     style: Optional[str] = Field(
         default=None,
-        description="Дополнительные теги стиля через запятую. Уточняют жанр и настроение",
+        description="Дополнительные теги стиля через запятую. "
+        "Тип: строка или null. По умолчанию: null. "
+        "Уточняют жанр и настроение",
         json_schema_extra={"examples": ["electronic, dance, upbeat, 128bpm"]},
     )
     reference_audio: Optional[str] = Field(
         default=None,
-        description="Референсное аудио в формате Base64. Модель постарается создать трек похожего звучания",
+        description="Референсное аудио в формате Base64. "
+        "Тип: строка (Base64) или null. По умолчанию: null. "
+        "Модель постарается создать трек похожего звучания",
     )
     src_audio: Optional[str] = Field(
         default=None,
-        description="Исходное аудио в формате Base64. Обязательно для задач cover, repaint, lego, vocal2bgm. "
+        description="Исходное аудио в формате Base64. "
+        "Тип: строка (Base64) или null. По умолчанию: null. "
+        "Обязательно для задач cover, repaint, lego, vocal2bgm. "
         "Это аудио, которое модель будет трансформировать",
     )
     lora_id: Optional[str] = Field(
         default=None,
         description="ID обученного LoRA-адаптера (имя стиля из /train/lora). "
+        "Тип: строка или null. По умолчанию: null. "
         "Применяет ваш собственный стиль к генерации",
         json_schema_extra={"examples": ["my_lofi_style"]},
     )
 
     vocal_language: Optional[str] = Field(
         default=None,
-        description="Язык вокала. Поддерживаемые: en, zh, ru, es, ja, de, fr, pt, it, ko и другие. "
-        "По умолчанию модель определяет автоматически",
+        description="Язык вокала. "
+        "Допустимые значения: en, zh, ru, es, ja, de, fr, pt, it, ko, ar, tr, nl, sv, pl, id, th, vi, he, fi. "
+        "По умолчанию: null (автоопределение). "
+        "Топ-10 языков дают лучшее качество",
         json_schema_extra={"examples": ["en"]},
     )
     bpm: Optional[int] = Field(
         default=None,
         ge=40,
         le=300,
-        description="Темп в ударах в минуту (BPM). Если не указан — модель определяет автоматически. "
-        "Примеры: 60–80 баллады, 100–120 поп, 120–140 танцевальная, 140+ драм-н-бейс",
+        description="Темп в ударах в минуту (BPM). "
+        "Диапазон: 40–300. По умолчанию: null (автоопределение). "
+        "Ориентиры: 60–80 баллады, 100–120 поп, 120–140 танцевальная, 140–180 драм-н-бейс",
     )
     keyscale: Optional[str] = Field(
         default=None,
-        description="Тональность трека. Например: C major, A minor, F# minor, Bb major",
+        description="Тональность трека. "
+        "Допустимые значения: нота + лад, например: C major, A minor, F# minor, Bb major, D dorian. "
+        "По умолчанию: null (автоопределение)",
         json_schema_extra={"examples": ["C major"]},
     )
     timesignature: Optional[str] = Field(
         default=None,
-        description="Музыкальный размер. Например: 4/4, 3/4, 6/8, 5/4. По умолчанию 4/4",
+        description="Музыкальный размер. "
+        "Допустимые значения: 2/4, 3/4, 4/4, 5/4, 6/8, 7/8, 12/8. "
+        "По умолчанию: null (обычно 4/4)",
         json_schema_extra={"examples": ["4/4"]},
     )
 
     seed: Optional[int] = Field(
         default=-1,
-        description="Сид генерации. -1 = случайный. Одинаковый сид + одинаковые параметры = одинаковый результат",
+        ge=-1,
+        le=2147483647,
+        description="Сид генерации для воспроизводимости результата. "
+        "Диапазон: -1–2147483647. По умолчанию: -1 (случайный). "
+        "Одинаковый сид + одинаковые параметры = одинаковый результат",
     )
     num_steps: Optional[int] = Field(
         default=8,
         ge=1,
         le=100,
-        description="Количество шагов диффузии. Turbo-модель: 8 шагов, SFT-модель: 50 шагов. "
-        "Больше шагов = выше качество, но дольше",
+        description="Количество шагов диффузии. "
+        "Диапазон: 1–100. По умолчанию: 8. "
+        "Turbo-модель: рекомендуется 8. SFT-модель: рекомендуется 50. "
+        "Больше шагов = выше качество, но дольше генерация",
     )
     cfg_scale: Optional[float] = Field(
         default=3.5,
         ge=0.0,
         le=15.0,
         description="Сила следования промпту (classifier-free guidance). "
-        "Выше = точнее следует описанию, но может звучать менее естественно. Рекомендуется 2.0–7.0",
+        "Диапазон: 0.0–15.0. По умолчанию: 3.5. Рекомендуется: 2.0–7.0. "
+        "Выше = точнее следует описанию, но может звучать менее естественно",
     )
     use_adg: Optional[bool] = Field(
         default=False,
         description="Включить Advanced Dynamic Guidance — адаптивное управление генерацией. "
+        "Допустимые значения: true | false. По умолчанию: false. "
         "Может улучшить качество при высоких значениях cfg_scale",
     )
     cfg_interval_start: Optional[float] = Field(
         default=0.0,
         ge=0.0,
         le=1.0,
-        description="Начало интервала CFG (0.0 = с самого начала диффузии). "
-        "Используется для тонкой настройки, когда CFG применяется не на всех шагах",
+        description="Начало интервала применения CFG по шагам диффузии. "
+        "Диапазон: 0.0–1.0. По умолчанию: 0.0 (с самого начала). "
+        "Позволяет применять CFG не на всех шагах. Должен быть < cfg_interval_end",
     )
     cfg_interval_end: Optional[float] = Field(
         default=1.0,
         ge=0.0,
         le=1.0,
-        description="Конец интервала CFG (1.0 = до конца диффузии). "
+        description="Конец интервала применения CFG по шагам диффузии. "
+        "Диапазон: 0.0–1.0. По умолчанию: 1.0 (до конца). "
         "Значения < 1.0 отключают CFG на последних шагах, делая звук естественнее",
     )
     shift: Optional[float] = Field(
         default=1.0,
-        description="Фактор сдвига таймстепов (v1.5). Влияет на распределение шумоподавления. "
+        ge=0.1,
+        le=10.0,
+        description="Фактор сдвига таймстепов диффузии (новое в v1.5). "
+        "Диапазон: 0.1–10.0. По умолчанию: 1.0. "
+        "Влияет на распределение шумоподавления. "
         "Значения > 1.0 сдвигают процесс к более чистым шагам",
     )
     infer_method: Optional[InferMethod] = Field(
         default=InferMethod.ODE,
-        description="Метод диффузионного вывода (v1.5). "
+        description="Метод диффузионного вывода (новое в v1.5). "
+        "Допустимые значения: ode | sde. По умолчанию: ode. "
         "ode — обыкновенное дифф. уравнение (быстрее, стабильнее). "
         "sde — стохастическое дифф. уравнение (разнообразнее, но менее предсказуемо)",
     )
@@ -269,63 +304,83 @@ class GenerationRequest(BaseModel):
         default=1,
         ge=1,
         le=8,
-        description="Количество вариаций за один запрос (1–8). Каждая вариация — уникальный трек",
+        description="Количество вариаций за один запрос. "
+        "Диапазон: 1–8. По умолчанию: 1. "
+        "Каждая вариация — уникальный трек. Больше = дольше и больше VRAM",
     )
     audio_format: Optional[AudioFormat] = Field(
         default=AudioFormat.WAV,
-        description="Формат выходного аудиофайла: wav (без сжатия, макс. качество), "
-        "mp3 (компактный), flac (без потерь, компактнее wav)",
+        description="Формат выходного аудиофайла. "
+        "Допустимые значения: wav | mp3 | flac. По умолчанию: wav. "
+        "wav — без сжатия, макс. качество. "
+        "mp3 — компактный, с потерями. "
+        "flac — без потерь, компактнее wav",
     )
 
     repainting_start: Optional[float] = Field(
         default=None,
         ge=0.0,
-        description="Начало фрагмента для перегенерации (секунды). Используется с задачами repaint и lego. "
+        le=600.0,
+        description="Начало фрагмента для перегенерации (в секундах). "
+        "Диапазон: 0.0–600.0. По умолчанию: null. "
+        "Используется с задачами repaint и lego. "
         "Пример: 10.0 — начать перегенерацию с 10-й секунды",
     )
     repainting_end: Optional[float] = Field(
         default=None,
-        description="Конец фрагмента для перегенерации (секунды). -1 = до конца трека. "
+        ge=-1.0,
+        le=600.0,
+        description="Конец фрагмента для перегенерации (в секундах). "
+        "Диапазон: -1.0–600.0. По умолчанию: null. "
+        "Значение -1 = до конца трека. "
         "Пример: 20.0 — перегенерировать до 20-й секунды",
     )
     audio_cover_strength: Optional[float] = Field(
         default=None,
         ge=0.0,
         le=1.0,
-        description="Сила трансформации для задачи cover (0.0–1.0). "
+        description="Сила трансформации для задачи cover. "
+        "Диапазон: 0.0–1.0. По умолчанию: null (1.0). "
         "0.0 = почти не менять оригинал, 1.0 = максимальная трансформация",
     )
 
     thinking: Optional[bool] = Field(
         default=False,
-        description="Включить режим планирования LLM. Модель автоматически генерирует метаданные "
-        "(BPM, тональность, структуру) на основе промпта. Требует инициализации LLM-модуля",
+        description="Включить режим планирования LLM. "
+        "Допустимые значения: true | false. По умолчанию: false. "
+        "Модель автоматически генерирует метаданные "
+        "(BPM, тональность, структуру) на основе промпта. Требует инициализации LLM-модуля (ACESTEP_INIT_LLM=true)",
     )
     lm_temperature: Optional[float] = Field(
         default=None,
         ge=0.0,
         le=2.0,
-        description="Температура сэмплирования LLM (0.0–2.0). Выше = более креативные, "
-        "но менее предсказуемые метаданные. По умолчанию 1.0",
+        description="Температура сэмплирования LLM. "
+        "Диапазон: 0.0–2.0. По умолчанию: null (1.0). "
+        "Выше = более креативные, но менее предсказуемые метаданные",
     )
     lm_top_p: Optional[float] = Field(
         default=None,
         ge=0.0,
         le=1.0,
-        description="Nucleus sampling для LLM (0.0–1.0). Ограничивает набор токенов по вероятности. "
-        "По умолчанию 0.95",
+        description="Nucleus sampling для LLM. "
+        "Диапазон: 0.0–1.0. По умолчанию: null (0.95). "
+        "Ограничивает набор токенов по суммарной вероятности",
     )
     lm_top_k: Optional[int] = Field(
         default=None,
         ge=1,
-        description="Top-K сэмплирование для LLM. Ограничивает выбор K самыми вероятными токенами. "
-        "По умолчанию 50",
+        le=500,
+        description="Top-K сэмплирование для LLM. "
+        "Диапазон: 1–500. По умолчанию: null (50). "
+        "Ограничивает выбор K самыми вероятными токенами",
     )
     lm_max_tokens: Optional[int] = Field(
         default=None,
         ge=64,
         le=4096,
-        description="Максимальное количество токенов LLM. По умолчанию 2048",
+        description="Максимальное количество токенов LLM. "
+        "Диапазон: 64–4096. По умолчанию: null (2048)",
     )
 
     model_config = {
