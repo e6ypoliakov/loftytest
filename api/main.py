@@ -11,7 +11,7 @@ import mimetypes
 import redis as redis_lib
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
 from core.config import settings
@@ -27,87 +27,163 @@ MAX_LORA_FILES = 10
 _redis_pool = redis_lib.ConnectionPool.from_url(settings.REDIS_URL)
 
 API_DESCRIPTION = """
-## Генерация музыки с помощью ACE-Step 1.5
+## 🎵 Генерация музыки с помощью ACE-Step 1.5
 
-Этот API позволяет генерировать музыку, отслеживать статус задач и обучать собственные стили (LoRA).
+REST API для создания музыки, обучения собственных стилей (LoRA) и работы с аудио.
 
-### Как пользоваться
+---
 
-**1. Отправьте запрос на генерацию:**
+### Быстрый старт
+
+**Шаг 1.** Отправьте запрос на генерацию:
 ```bash
 curl -X POST http://localhost:5000/generate \\
   -H "Content-Type: application/json" \\
   -d '{"prompt": "energetic electronic dance music", "duration": 60}'
 ```
 
-**2. Проверьте статус по task_id:**
+**Шаг 2.** Проверьте статус по `task_id`:
 ```bash
 curl http://localhost:5000/status/{task_id}
 ```
 
-**3. Скачайте готовый файл:**
+**Шаг 3.** Скачайте готовый файл:
 ```bash
 curl -O http://localhost:5000/files/{filename}
 ```
 
-### Типы задач (task_type)
-| Тип | Описание | Обязательные поля |
-|-----|----------|-------------------|
-| `text2music` | Создание трека по описанию (по умолчанию) | `prompt` |
-| `cover` | Перенос стиля на исходное аудио | `src_audio`, `prompt` |
-| `repaint` | Перегенерация фрагмента трека | `src_audio`, `repainting_start/end` |
-| `lego` | Генерация дорожки поверх аудио | `src_audio`, `prompt` |
+---
+
+### Типы задач (`task_type`)
+
+| Режим | Описание | Обязательные поля |
+|-------|----------|-------------------|
+| `text2music` | Создание трека по описанию **(по умолчанию)** | `prompt` |
+| `cover` | Перенос стиля на исходное аудио | `src_audio` + `prompt` |
+| `repaint` | Перегенерация фрагмента трека | `src_audio` + `repainting_start/end` |
+| `lego` | Генерация дорожки поверх аудио | `src_audio` + `prompt` |
 | `vocal2bgm` | Аккомпанемент под вокал | `src_audio` |
 | `retake` | Повторная генерация с другим сидом | `prompt` |
 
-### Группы параметров
-- **Основные:** `prompt`, `task_type`, `duration`, `lyrics`, `instrumental`, `style`
-- **Метаданные:** `vocal_language`, `bpm`, `keyscale`, `timesignature`
-- **Диффузия:** `num_steps`, `cfg_scale`, `seed`, `use_adg`, `cfg_interval_start/end`, `shift`, `infer_method`
-- **Задачи с аудио:** `src_audio`, `reference_audio`, `repainting_start/end`, `audio_cover_strength`
-- **LLM (thinking):** `thinking`, `lm_temperature`, `lm_top_p`, `lm_top_k`, `lm_max_tokens`
-- **Вывод:** `batch_size`, `audio_format`, `lora_id`
+---
 
-### Выходные форматы
-`.wav` (без сжатия) · `.mp3` (компактный) · `.flac` (без потерь)
+### Справочник параметров `/generate`
+
+#### 🎼 Основные
+| Параметр | Тип | Диапазон | По умолчанию | Описание |
+|----------|-----|----------|-------------|----------|
+| `prompt` | string | — | **обязательный** | Описание стиля музыки |
+| `task_type` | enum | text2music \\| cover \\| repaint \\| lego \\| vocal2bgm \\| retake | text2music | Режим генерации |
+| `duration` | int | 10 – 600 | 120 | Длительность (сек) |
+| `lyrics` | string | — | null | Текст с маркерами [verse], [chorus]… |
+| `instrumental` | bool | true \\| false | false | Только инструментал |
+| `style` | string | — | null | Теги стиля через запятую |
+
+#### 🎤 Метаданные
+| Параметр | Тип | Диапазон | По умолчанию | Описание |
+|----------|-----|----------|-------------|----------|
+| `vocal_language` | string | en, zh, ru, es, ja, de, fr, pt, it, ko… | null (авто) | Язык вокала |
+| `bpm` | int | 40 – 300 | null (авто) | Темп (ударов/мин) |
+| `keyscale` | string | C major, A minor, F# minor… | null (авто) | Тональность |
+| `timesignature` | string | 2/4, 3/4, 4/4, 5/4, 6/8, 7/8, 12/8 | null (4/4) | Размер |
+
+#### ⚙️ Настройки диффузии
+| Параметр | Тип | Диапазон | По умолчанию | Описание |
+|----------|-----|----------|-------------|----------|
+| `seed` | int | -1 – 2147483647 | -1 (случайный) | Сид воспроизводимости |
+| `num_steps` | int | 1 – 100 | 8 | Шаги диффузии (turbo=8, sft=50) |
+| `cfg_scale` | float | 0.0 – 15.0 | 3.5 | Сила следования промпту |
+| `use_adg` | bool | true \\| false | false | Advanced Dynamic Guidance |
+| `cfg_interval_start` | float | 0.0 – 1.0 | 0.0 | Начало интервала CFG |
+| `cfg_interval_end` | float | 0.0 – 1.0 | 1.0 | Конец интервала CFG |
+| `shift` | float | 0.1 – 10.0 | 1.0 | Сдвиг таймстепов (v1.5) |
+| `infer_method` | enum | ode \\| sde | ode | Метод вывода (v1.5) |
+
+#### 🔊 Задачи с аудио
+| Параметр | Тип | Диапазон | По умолчанию | Описание |
+|----------|-----|----------|-------------|----------|
+| `src_audio` | string | Base64 | null | Исходное аудио (cover/repaint/lego/vocal2bgm) |
+| `reference_audio` | string | Base64 | null | Референс для стиля |
+| `repainting_start` | float | 0.0 – 600.0 | null | Начало перегенерации (сек) |
+| `repainting_end` | float | -1.0 – 600.0 | null | Конец перегенерации (-1 = до конца) |
+| `audio_cover_strength` | float | 0.0 – 1.0 | null (1.0) | Сила трансформации cover |
+
+#### 🧠 LLM (thinking)
+| Параметр | Тип | Диапазон | По умолчанию | Описание |
+|----------|-----|----------|-------------|----------|
+| `thinking` | bool | true \\| false | false | Автопланирование метаданных |
+| `lm_temperature` | float | 0.0 – 2.0 | null (1.0) | Температура LLM |
+| `lm_top_p` | float | 0.0 – 1.0 | null (0.95) | Nucleus sampling |
+| `lm_top_k` | int | 1 – 500 | null (50) | Top-K sampling |
+| `lm_max_tokens` | int | 64 – 4096 | null (2048) | Макс. токенов LLM |
+
+#### 📦 Вывод
+| Параметр | Тип | Диапазон | По умолчанию | Описание |
+|----------|-----|----------|-------------|----------|
+| `batch_size` | int | 1 – 8 | 1 | Количество вариаций |
+| `audio_format` | enum | wav \\| mp3 \\| flac | wav | Формат файла |
+| `lora_id` | string | — | null | ID обученного стиля |
+
+---
 
 ### Статусы задач
+
 | Статус | Описание |
 |--------|----------|
-| `pending` | Задача в очереди |
-| `processing` | Идёт генерация |
-| `success` | Готово, файл доступен |
-| `failed` | Ошибка, см. поле `error` |
+| `pending` | ⏳ Задача в очереди |
+| `processing` | ⚡ Идёт генерация |
+| `success` | ✅ Готово — см. `file_url` |
+| `failed` | ❌ Ошибка — см. `error` |
+
+---
+
+### Время генерации (turbo-режим)
+| GPU | Время |
+|-----|-------|
+| A100 | ~2 сек |
+| RTX 3090 | ~10 сек |
+| RTX 4070 | ~15 сек |
+| CPU | 5–15 мин |
 """
 
 TAGS_METADATA = [
     {
-        "name": "Генерация",
-        "description": "Создание музыки и проверка статуса задач. "
-        "Отправьте промпт — получите уникальный аудиотрек.",
+        "name": "1. Генерация музыки",
+        "description": "Создание треков и проверка статуса. Основной рабочий процесс API.",
     },
     {
-        "name": "Файлы",
-        "description": "Скачивание готовых аудиофайлов по имени.",
+        "name": "2. Скачивание файлов",
+        "description": "Загрузка готовых аудиофайлов по имени из поля `file_url`.",
     },
     {
-        "name": "Обучение LoRA",
-        "description": "Обучение собственного стиля на ваших аудиозаписях (5–10 файлов в ZIP). "
-        "После обучения используйте `lora_id` в запросе генерации.",
+        "name": "3. Обучение стиля (LoRA)",
+        "description": "Обучение собственного стиля на 5–10 аудиозаписях в ZIP. "
+        "После обучения передайте имя стиля в поле `lora_id` запроса `/generate`.",
     },
     {
-        "name": "Состояние",
-        "description": "Проверка работоспособности API, Redis и модели.",
+        "name": "4. Состояние сервиса",
+        "description": "Health-check API, Redis и модели. Используйте для мониторинга.",
     },
 ]
+
+SWAGGER_UI_PARAMS = {
+    "defaultModelsExpandDepth": 1,
+    "docExpansion": "list",
+    "filter": True,
+    "syntaxHighlight.theme": "monokai",
+    "tryItOutEnabled": True,
+    "persistAuthorization": True,
+    "displayRequestDuration": True,
+}
 
 app = FastAPI(
     title="ACE-Step Music Generation API",
     description=API_DESCRIPTION,
     version="1.0.0",
     openapi_tags=TAGS_METADATA,
-    docs_url="/docs",
+    docs_url=None,
     redoc_url="/redoc",
+    swagger_ui_parameters=SWAGGER_UI_PARAMS,
 )
 
 app.add_middleware(
@@ -117,6 +193,109 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui():
+    return HTMLResponse(f"""<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>ACE-Step Music Generation API</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+    <style>
+        body {{ margin: 0; background: #1a1a2e; }}
+        .swagger-ui .topbar {{ display: none; }}
+        .swagger-ui .info {{ margin: 20px 0; }}
+        .swagger-ui .info .title {{ color: #e0e0e0; font-size: 28px; }}
+        .swagger-ui .info .description {{ color: #ccc; }}
+        .swagger-ui .info .description h2 {{ color: #bb86fc; border-bottom: 2px solid #333; padding-bottom: 8px; }}
+        .swagger-ui .info .description h3 {{ color: #03dac6; margin-top: 24px; }}
+        .swagger-ui .info .description h4 {{ color: #cf6679; margin-top: 20px; font-size: 16px; }}
+        .swagger-ui .info .description table {{
+            border-collapse: collapse; width: 100%; margin: 12px 0;
+            font-size: 13px; background: #16213e; border-radius: 8px; overflow: hidden;
+        }}
+        .swagger-ui .info .description th {{
+            background: #0f3460; color: #e0e0e0; padding: 10px 12px;
+            text-align: left; font-weight: 600; border-bottom: 2px solid #1a1a2e;
+        }}
+        .swagger-ui .info .description td {{
+            padding: 8px 12px; color: #ccc; border-bottom: 1px solid #1a1a2e;
+        }}
+        .swagger-ui .info .description tr:hover td {{ background: #1a2744; }}
+        .swagger-ui .info .description code {{
+            background: #0f3460; color: #03dac6; padding: 2px 6px;
+            border-radius: 4px; font-size: 12px;
+        }}
+        .swagger-ui .info .description pre {{
+            background: #0d1b2a; border: 1px solid #333; border-radius: 8px;
+            padding: 16px; overflow-x: auto;
+        }}
+        .swagger-ui .info .description pre code {{
+            background: none; color: #a8d8a8; padding: 0; font-size: 13px;
+        }}
+        .swagger-ui .info .description hr {{ border: 1px solid #333; margin: 24px 0; }}
+        .swagger-ui .scheme-container {{ background: #16213e; box-shadow: none; }}
+        .swagger-ui .opblock-tag {{
+            color: #e0e0e0 !important; border-bottom: 1px solid #333 !important;
+            font-size: 18px !important;
+        }}
+        .swagger-ui .opblock-tag small {{ color: #999 !important; }}
+        .swagger-ui .opblock.opblock-post {{ background: rgba(73,204,144,0.08); border-color: #49cc90; }}
+        .swagger-ui .opblock.opblock-get {{ background: rgba(97,175,254,0.08); border-color: #61affe; }}
+        .swagger-ui .opblock .opblock-summary-method {{ font-size: 14px; font-weight: 700; min-width: 70px; }}
+        .swagger-ui .opblock .opblock-summary-description {{ color: #ccc; font-size: 14px; }}
+        .swagger-ui .opblock-description-wrapper p {{ color: #bbb; }}
+        .swagger-ui .wrapper {{ max-width: 1200px; padding: 0 20px; }}
+        .swagger-ui .model-box {{ background: #16213e; }}
+        .swagger-ui section.models {{ border: 1px solid #333; }}
+        .swagger-ui .model {{ color: #ccc; }}
+        .swagger-ui .prop-type {{ color: #03dac6; }}
+        .swagger-ui .opblock-body pre {{ background: #0d1b2a; color: #a8d8a8; }}
+        .swagger-ui .btn {{ border-radius: 4px; }}
+        .swagger-ui .btn.execute {{ background: #bb86fc; border-color: #bb86fc; }}
+        .swagger-ui .btn.execute:hover {{ background: #9a67ea; }}
+        .swagger-ui .response-col_status {{ color: #03dac6; }}
+        .swagger-ui table tbody tr td {{ padding: 10px; border-bottom: 1px solid #333; color: #ccc; }}
+        .swagger-ui table thead tr th {{ padding: 10px; color: #e0e0e0; border-bottom: 2px solid #333; }}
+        .swagger-ui .parameters-col_description input,
+        .swagger-ui .parameters-col_description textarea,
+        .swagger-ui .parameters-col_description select {{
+            background: #0d1b2a; color: #e0e0e0; border: 1px solid #333; border-radius: 4px;
+        }}
+        .swagger-ui .parameter__name {{ color: #bb86fc; font-weight: 600; }}
+        .swagger-ui .parameter__type {{ color: #03dac6; }}
+        .swagger-ui .parameter__in {{ color: #666; }}
+        .swagger-ui .opblock-section-header {{ background: #16213e; box-shadow: none; }}
+        .swagger-ui .opblock-section-header h4 {{ color: #e0e0e0; }}
+        .swagger-ui .loading-container {{ background: #1a1a2e; }}
+        .swagger-ui .response-col_description {{ color: #ccc; }}
+        .swagger-ui .renderedMarkdown p {{ color: #bbb; margin: 4px 0; }}
+        .swagger-ui .model-title {{ color: #bb86fc; }}
+        .swagger-ui .prop-format {{ color: #999; }}
+    </style>
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+        SwaggerUIBundle({{
+            url: "/openapi.json",
+            dom_id: "#swagger-ui",
+            presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+            layout: "BaseLayout",
+            defaultModelsExpandDepth: 1,
+            docExpansion: "list",
+            filter: true,
+            syntaxHighlight: {{ theme: "monokai" }},
+            tryItOutEnabled: true,
+            displayRequestDuration: true,
+            requestSnippetsEnabled: true,
+        }})
+    </script>
+</body>
+</html>""")
 
 
 class TaskType(str, Enum):
@@ -473,7 +652,7 @@ def _extract_audio_from_zip(archive_content: bytes, tmp_dir: str) -> List[str]:
     return audio_files
 
 
-@app.get("/", tags=["Состояние"], summary="Информация об API",
+@app.get("/", tags=["4. Состояние сервиса"], summary="Информация об API",
          description="Возвращает общую информацию о сервисе и список доступных эндпоинтов.")
 async def root():
     return {
@@ -490,7 +669,7 @@ async def root():
     }
 
 
-@app.get("/health", response_model=HealthResponse, tags=["Состояние"], summary="Проверка здоровья",
+@app.get("/health", response_model=HealthResponse, tags=["4. Состояние сервиса"], summary="Проверка здоровья",
          description="Проверяет работоспособность API, подключение к Redis и доступность модели. "
          "Используйте для мониторинга и health-check в Docker/Kubernetes.")
 async def health_check():
@@ -510,7 +689,7 @@ async def health_check():
     }
 
 
-@app.post("/generate", response_model=GenerationResponse, tags=["Генерация"],
+@app.post("/generate", response_model=GenerationResponse, tags=["1. Генерация музыки"],
           summary="Создать музыкальный трек",
           description="""Отправляет задачу на генерацию музыки. Возвращает `task_id` для отслеживания.
 
@@ -585,7 +764,7 @@ async def generate(request: GenerationRequest):
     return GenerationResponse(task_id=task_id, status="pending")
 
 
-@app.get("/status/{task_id}", response_model=StatusResponse, tags=["Генерация"],
+@app.get("/status/{task_id}", response_model=StatusResponse, tags=["1. Генерация музыки"],
          summary="Проверить статус задачи",
          description="""Возвращает текущий статус задачи генерации или обучения LoRA.
 
@@ -633,7 +812,7 @@ async def get_status(task_id: str):
         return StatusResponse(task_id=task_id, status=result.state.lower())
 
 
-@app.get("/files/{filename}", tags=["Файлы"],
+@app.get("/files/{filename}", tags=["2. Скачивание файлов"],
          summary="Скачать аудиофайл",
          description="""Скачивает сгенерированный аудиофайл по имени.
 
@@ -671,7 +850,7 @@ async def get_file(filename: str):
     )
 
 
-@app.post("/train/lora", response_model=LoraTrainResponse, tags=["Обучение LoRA"],
+@app.post("/train/lora", response_model=LoraTrainResponse, tags=["3. Обучение стиля (LoRA)"],
           summary="Обучить собственный стиль (LoRA)",
           description="""Загрузите ZIP-архив с аудиозаписями вашего стиля для обучения LoRA-адаптера.
 
