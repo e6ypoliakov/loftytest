@@ -166,16 +166,6 @@ TAGS_METADATA = [
     },
 ]
 
-SWAGGER_UI_PARAMS = {
-    "defaultModelsExpandDepth": 1,
-    "docExpansion": "list",
-    "filter": True,
-    "syntaxHighlight.theme": "monokai",
-    "tryItOutEnabled": True,
-    "persistAuthorization": True,
-    "displayRequestDuration": True,
-}
-
 app = FastAPI(
     title="ACE-Step Music Generation API",
     description=API_DESCRIPTION,
@@ -183,7 +173,6 @@ app = FastAPI(
     openapi_tags=TAGS_METADATA,
     docs_url=None,
     redoc_url="/redoc",
-    swagger_ui_parameters=SWAGGER_UI_PARAMS,
 )
 
 app.add_middleware(
@@ -283,13 +272,14 @@ async def custom_swagger_ui():
         SwaggerUIBundle({{
             url: "/openapi.json",
             dom_id: "#swagger-ui",
-            presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+            presets: [SwaggerUIBundle.presets.apis],
             layout: "BaseLayout",
             defaultModelsExpandDepth: 1,
             docExpansion: "list",
             filter: true,
             syntaxHighlight: {{ theme: "monokai" }},
             tryItOutEnabled: true,
+            persistAuthorization: true,
             displayRequestDuration: true,
             requestSnippetsEnabled: true,
         }})
