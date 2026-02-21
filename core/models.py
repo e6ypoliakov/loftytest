@@ -96,28 +96,115 @@ def _build_generation_params(params: Dict[str, Any]) -> Tuple:
     caption = params.get("prompt", params.get("caption", ""))
     lyrics = params.get("lyrics", "")
     style = params.get("style", "")
+    instrumental = params.get("instrumental", False)
 
     if style and caption:
         caption = f"{style}, {caption}"
     elif style:
         caption = style
 
+    if instrumental:
+        lyrics = "[Instrumental]"
+    elif not lyrics:
+        lyrics = "[Instrumental]"
+
     seed = params.get("seed", -1)
 
-    gen_params = GenerationParams(
-        caption=caption,
-        lyrics=lyrics if lyrics else "[Instrumental]",
-        duration=float(params.get("duration", 120)),
-        inference_steps=params.get("num_steps", 8),
-        guidance_scale=params.get("cfg_scale", 3.5),
-        seed=seed if seed and seed != -1 else -1,
-        thinking=False,
-    )
+    gen_kwargs = {
+        "caption": caption,
+        "lyrics": lyrics,
+        "duration": float(params.get("duration", 120)),
+        "inference_steps": params.get("num_steps", 8),
+        "guidance_scale": params.get("cfg_scale", 3.5),
+        "seed": seed if seed and seed != -1 else -1,
+        "thinking": params.get("thinking", False),
+        "instrumental": instrumental,
+    }
+
+    task_type = params.get("task_type")
+    if task_type:
+        gen_kwargs["task_type"] = task_type
+
+    reference_audio = params.get("reference_audio")
+    if reference_audio:
+        gen_kwargs["reference_audio"] = reference_audio
+
+    src_audio = params.get("src_audio")
+    if src_audio:
+        gen_kwargs["src_audio"] = src_audio
+
+    vocal_language = params.get("vocal_language")
+    if vocal_language:
+        gen_kwargs["vocal_language"] = vocal_language
+
+    bpm = params.get("bpm")
+    if bpm is not None:
+        gen_kwargs["bpm"] = bpm
+
+    keyscale = params.get("keyscale")
+    if keyscale:
+        gen_kwargs["keyscale"] = keyscale
+
+    timesignature = params.get("timesignature")
+    if timesignature:
+        gen_kwargs["timesignature"] = timesignature
+
+    use_adg = params.get("use_adg")
+    if use_adg is not None:
+        gen_kwargs["use_adg"] = use_adg
+
+    cfg_interval_start = params.get("cfg_interval_start")
+    if cfg_interval_start is not None:
+        gen_kwargs["cfg_interval_start"] = cfg_interval_start
+
+    cfg_interval_end = params.get("cfg_interval_end")
+    if cfg_interval_end is not None:
+        gen_kwargs["cfg_interval_end"] = cfg_interval_end
+
+    shift = params.get("shift")
+    if shift is not None:
+        gen_kwargs["shift"] = shift
+
+    infer_method = params.get("infer_method")
+    if infer_method:
+        gen_kwargs["infer_method"] = infer_method
+
+    repainting_start = params.get("repainting_start")
+    if repainting_start is not None:
+        gen_kwargs["repainting_start"] = repainting_start
+
+    repainting_end = params.get("repainting_end")
+    if repainting_end is not None:
+        gen_kwargs["repainting_end"] = repainting_end
+
+    audio_cover_strength = params.get("audio_cover_strength")
+    if audio_cover_strength is not None:
+        gen_kwargs["audio_cover_strength"] = audio_cover_strength
+
+    lm_temperature = params.get("lm_temperature")
+    if lm_temperature is not None:
+        gen_kwargs["lm_temperature"] = lm_temperature
+
+    lm_top_p = params.get("lm_top_p")
+    if lm_top_p is not None:
+        gen_kwargs["lm_top_p"] = lm_top_p
+
+    lm_top_k = params.get("lm_top_k")
+    if lm_top_k is not None:
+        gen_kwargs["lm_top_k"] = lm_top_k
+
+    lm_max_tokens = params.get("lm_max_tokens")
+    if lm_max_tokens is not None:
+        gen_kwargs["lm_max_tokens"] = lm_max_tokens
+
+    gen_params = GenerationParams(**gen_kwargs)
+
+    audio_format = params.get("audio_format", "wav")
 
     gen_config = GenerationConfig(
         batch_size=params.get("batch_size", 1),
         use_random_seed=(seed == -1 or seed is None),
-        audio_format="wav",
+        audio_format=audio_format,
     )
 
     return gen_params, gen_config, caption

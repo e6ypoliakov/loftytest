@@ -4,6 +4,7 @@
 REST API сервис для генерации музыки через модель ACE-Step 1.5. Проект предназначен для локального запуска на компьютере с NVIDIA GPU. FastAPI + Celery + Redis.
 
 ## Recent Changes
+- 2026-02-21: Добавлены все поля настройки ACE-Step 1.5 в REST API: task_type (6 режимов), метаданные (bpm, keyscale, timesignature, vocal_language), расширенные настройки диффузии (use_adg, cfg_interval, shift, infer_method), параметры задач с аудио (src_audio, repainting, cover_strength), LLM-параметры (thinking, temperature, top_p, top_k), audio_format (wav/mp3/flac). 60 тестов.
 - 2026-02-20: Переработана документация Swagger UI: русские описания, примеры curl, инструкция по использованию, группировка тегов, подробные описания полей.
 - 2026-02-20: Добавлен deploy.bat для Windows (полный аналог deploy.sh). Обновлён README.md.
 - 2026-02-20: Добавлены unit-тесты (52 теста): endpoints, validation, helpers, config. pytest + starlette TestClient.

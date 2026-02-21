@@ -172,6 +172,27 @@ class TestGenerationRequestValidation:
         assert req.batch_size == 1
         assert req.lyrics is None
         assert req.style is None
+        assert req.task_type.value == "text2music"
+        assert req.instrumental is False
+        assert req.thinking is False
+        assert req.audio_format.value == "wav"
+        assert req.infer_method.value == "ode"
+        assert req.use_adg is False
+        assert req.cfg_interval_start == 0.0
+        assert req.cfg_interval_end == 1.0
+        assert req.shift == 1.0
+        assert req.bpm is None
+        assert req.keyscale is None
+        assert req.timesignature is None
+        assert req.vocal_language is None
+        assert req.src_audio is None
+        assert req.repainting_start is None
+        assert req.repainting_end is None
+        assert req.audio_cover_strength is None
+        assert req.lm_temperature is None
+        assert req.lm_top_p is None
+        assert req.lm_top_k is None
+        assert req.lm_max_tokens is None
 
     def test_boundary_duration_min(self):
         from api.main import GenerationRequest
@@ -192,3 +213,81 @@ class TestGenerationRequestValidation:
         from api.main import GenerationRequest
         req = GenerationRequest(prompt="test", batch_size=8)
         assert req.batch_size == 8
+
+    def test_task_type_cover(self):
+        from api.main import GenerationRequest
+        req = GenerationRequest(prompt="test", task_type="cover", src_audio="base64data", audio_cover_strength=0.7)
+        assert req.task_type.value == "cover"
+        assert req.src_audio == "base64data"
+        assert req.audio_cover_strength == 0.7
+
+    def test_task_type_repaint(self):
+        from api.main import GenerationRequest
+        req = GenerationRequest(prompt="test", task_type="repaint", src_audio="data", repainting_start=10.0, repainting_end=20.0)
+        assert req.task_type.value == "repaint"
+        assert req.repainting_start == 10.0
+        assert req.repainting_end == 20.0
+
+    def test_metadata_fields(self):
+        from api.main import GenerationRequest
+        req = GenerationRequest(prompt="test", bpm=128, keyscale="C major", timesignature="4/4", vocal_language="ru")
+        assert req.bpm == 128
+        assert req.keyscale == "C major"
+        assert req.timesignature == "4/4"
+        assert req.vocal_language == "ru"
+
+    def test_bpm_boundaries(self):
+        from api.main import GenerationRequest
+        import pydantic
+        req = GenerationRequest(prompt="test", bpm=40)
+        assert req.bpm == 40
+        req = GenerationRequest(prompt="test", bpm=300)
+        assert req.bpm == 300
+        try:
+            GenerationRequest(prompt="test", bpm=10)
+            assert False, "Should have raised"
+        except pydantic.ValidationError:
+            pass
+
+    def test_diffusion_advanced_fields(self):
+        from api.main import GenerationRequest
+        req = GenerationRequest(
+            prompt="test",
+            use_adg=True,
+            cfg_interval_start=0.2,
+            cfg_interval_end=0.8,
+            shift=1.5,
+            infer_method="sde",
+        )
+        assert req.use_adg is True
+        assert req.cfg_interval_start == 0.2
+        assert req.cfg_interval_end == 0.8
+        assert req.shift == 1.5
+        assert req.infer_method.value == "sde"
+
+    def test_lm_fields(self):
+        from api.main import GenerationRequest
+        req = GenerationRequest(
+            prompt="test",
+            thinking=True,
+            lm_temperature=0.8,
+            lm_top_p=0.9,
+            lm_top_k=30,
+            lm_max_tokens=1024,
+        )
+        assert req.thinking is True
+        assert req.lm_temperature == 0.8
+        assert req.lm_top_p == 0.9
+        assert req.lm_top_k == 30
+        assert req.lm_max_tokens == 1024
+
+    def test_audio_format_options(self):
+        from api.main import GenerationRequest
+        for fmt in ("wav", "mp3", "flac"):
+            req = GenerationRequest(prompt="test", audio_format=fmt)
+            assert req.audio_format.value == fmt
+
+    def test_instrumental_flag(self):
+        from api.main import GenerationRequest
+        req = GenerationRequest(prompt="test", instrumental=True)
+        assert req.instrumental is True
